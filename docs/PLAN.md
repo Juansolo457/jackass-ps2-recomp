@@ -95,12 +95,23 @@ as Layer 5, measured frame time at 1080p on the user's machine and on the Steam 
    frame rate only if the game's timing allows.
 5. Source-only release with a build-from-your-own-disc guide, as fear360 and graw360 do.
 
-## Open questions (decide at Layer 0)
-- **Linux build host.** The PC has no WSL distribution. Options: WSL2 Ubuntu (needs the user's
-  OK to install), the Steam Deck over SSH, or a cross-compile from Windows with a Linux CI run.
+## Open questions
+Settled at Layer 0 (2026-10-25, see FINDINGS.md):
+- **Linux build host:** WSL2 Ubuntu 26.04 on this PC (the user's choice).
+- **Overlays:** none. Plain PS2Recomp; the boubou666 fork is not needed.
+- **Game ID:** `SLUS_216.27`.
+
+Still open:
 - **PS2Recomp's actual state** at the pinned commit (its README says experimental): how much of
   the kernel and DMA layer exists versus is stubbed, and whether its generated code builds with
-  clang on Linux and ARM64 out of the box.
-- **Overlays.** Whether Jackass loads code at run time; if so the boubou666 overlay fork or an
-  equivalent patch is needed before Layer 2 is complete.
-- **Game ID.** The USA ID is `SLUS_xxx.xx` until the disc is extracted; don't guess it.
+  clang on Linux and ARM64 out of the box. Decide after `tools/setup.sh` and a read of
+  `ps2xRuntime`/`ps2xIOP`.
+- **Metrowerks output.** The game was built with CodeWarrior MIPS 2.4.1, not GCC. How well does
+  `ps2xAnalyzer` find function boundaries and switch tables in it? Check against a REA/Ghidra
+  disassembly at Layer 2 before trusting the TOML.
+- **FMOD on the IOP.** FMOD's EE↔IOP SIF command protocol (`FSOUND_Command_*`) has to be HLE'd
+  and `.FSB` ADPCM decoded on the host: is there enough in the FMOD 3.x PS2 headers (public at
+  the time) to do that without running the IRX?
+- **Movies.** 2.1 GB of `.pss`: host MPEG-2 decode (FFmpeg) matching the IPU's output, or an
+  IPU implementation. Decide at Layer 6; not needed for the title screen if the intro can be
+  skipped.

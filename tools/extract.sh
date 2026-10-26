@@ -14,10 +14,20 @@ mkdir -p "$root/private" "$root/port/assets"
 case "$dump" in
   *.chd|*.CHD)
     command -v chdman >/dev/null 2>&1 || { echo "extract: chdman not found (mame-tools); or pass an .iso" >&2; exit 1; }
+    raw=$root/private/jackass.raw
     iso=$root/private/jackass.iso
     if [ ! -f "$iso" ]; then
-      echo "extract: chdman extractdvd -> $iso"
-      chdman extractdvd -i "$dump" -o "$iso"
+      if [ ! -f "$raw" ]; then
+        # extractdvd writes the hunks as stored: 2048-byte sectors for a DVD CHD, 2448-byte raw
+        # frames (2352 slot + 96 subcode) for a CD-type CHD such as a cue/bin conversion.
+        echo "extract: chdman extractdvd -> $raw"
+        chdman extractdvd -i "$dump" -o "$raw"
+      fi
+      if python3 -I "$root/tools/iso9660.py" toiso "$raw" "$iso" 2>/dev/null; then
+        rm -f "$raw"
+      else
+        mv "$raw" "$iso"   # already plain 2048-byte sectors
+      fi
     else
       echo "extract: using existing $iso"
     fi ;;

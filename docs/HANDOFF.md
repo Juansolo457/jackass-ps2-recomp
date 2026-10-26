@@ -5,54 +5,79 @@ disc and executable facts. This file is the state, the build/run detail and wher
 Update it at the end of every session; the next model starts here, not from chat history.
 
 ## Where it stands
-**Layer 0 (recon) not started; repository scaffolded 2026-10-25.** Nothing has been built or
-run. The user's decisions so far:
+**Layer 0 (recon) done 2026-10-25, except the PCSX2 reference run.** The disc is extracted,
+the executable identified and characterised (FINDINGS.md). Nothing is recompiled or built yet.
+
+The user's decisions so far:
 - Native **Linux** port first, then ARM64, then Windows.
 - Build **bottom up**: each hardware layer verified against PCSX2 before the next (PLAN.md).
 - Toolchain: PS2Recomp, following the God of War native ports; repo conventions from
   graw360-recomp and fear360-recomp.
-- The CHD stays where it is for now (the user's Downloads folder, read-only, Redump-verified
-  USA dump, 2.66 GB). It has **not** been opened: a header-parsing run on it was declined by the
-  user on 2026-10-25, so ask before touching the file.
+- Linux build host: **WSL2 Ubuntu 26.04** on this PC (installed 2026-10-25, distro `Ubuntu`,
+  user `jj`, default; systemd on). The repo is reached at
+  `/mnt/c/Users/JJ-PC/source/repos/jackass-ps2-recomp`. Installed there: clang 21.1.8, lld,
+  cmake, ninja, python3, mame-tools (chdman 0.285), libvulkan-dev, vulkan-tools, glslc,
+  libsdl3-dev 3.4.2, p7zip. Run things with `wsl.exe -d Ubuntu -u jj -- bash -c '...'`.
+- The CHD stays in the user's Downloads folder (read-only). The user OK'd reading it and
+  extracting it with chdman (2026-10-25).
+- At each stopping point, add/update the project's row on **recomp.fyi** (`.recomp.json` at the
+  repo root is read daily once the repo is public on GitHub; the manifest issue form at
+  github.com/neurocontrarian/recomp-board lists it immediately). Not done yet: the repo is
+  local only, and publishing it needs the user's say-so.
 
 | Piece | State |
 |---|---|
-| `tools/audit_repo.py` | written (PS2 adaptation of the 360 repos' script); not yet run on a commit |
+| `private/jackass.iso` (ignored) | plain 2048-byte ISO, 4.16 GB, from the CHD via `tools/extract.sh` |
+| `port/assets/` (ignored) | 504 files, 2.6 GB, the whole disc; `SLUS_216.27` SHA-256 matches FINDINGS.md |
+| `private/disc_listing.txt` (ignored) | `tools/iso9660.py list` output |
+| `tools/audit_repo.py` | works; run on every commit so far |
 | `tools/setup.sh` | written: pins PS2Recomp, checks tools, records the commit; **never run** |
-| `tools/extract.sh` | written: `chdman extractdvd` → ISO → `tools/iso9660.py` listing/extraction; **never run** |
-| `tools/iso9660.py` | written: pure-Python ISO 9660 lister/extractor for the DVD image; untested |
-| `tools/chd_info.py` | written: prints a CHD v5 header, codecs and metadata; untested |
-| `tools/build.sh`, `launch.sh`, `smoke.sh` | not written (need Layer 0 and a PS2Recomp pin first) |
+| `tools/extract.sh` | **ran end to end** in WSL (chdman 1m37s + toiso/extract 1m05s). Handles CD-type CHDs |
+| `tools/iso9660.py` | works: list/extract/cat/toiso, detects 2048/2352/2448-byte frame layouts |
+| `tools/chd_info.py` | works (CHD v5 header + metadata) |
+| `tools/build.sh`, `launch.sh`, `smoke.sh` | not written (need a PS2Recomp pin first) |
 | `port/jackass.toml` | not written (output of `ps2xAnalyzer`, Layer 2) |
 | `native/` | empty |
 
-## Blockers before Layer 0 can run
-1. **A Linux environment.** No WSL distribution is installed. Decide between WSL2 Ubuntu
-   (install needs the user's OK: it is a system change), the Steam Deck over SSH, or a Linux
-   box. The extraction itself (chdman + Python) can run on Windows if the user prefers.
-2. **chdman.** Not installed. Source: the official MAME release (mamedev.org or the
-   `mame` package on Linux). Downloading needs the user's OK.
-3. **PCSX2** for the oracle traces. Not installed on this PC.
-4. **PS2Recomp pinned commit.** `tools/setup.sh` clones `ran-j/PS2Recomp` and records the commit
-   in `third_party/PS2Recomp.commit`; the first run decides the pin. Its license text goes into
-   `LICENSES/` the same day.
+## What Layer 0 found that changes the plan (details in FINDINGS.md)
+- **Single stripped ELF, no overlays** → plain PS2Recomp, no overlay fork.
+- **Metrowerks CodeWarrior MIPS 2.4.1** compiler, not GCC → check the analyzer's function
+  splitting against a disassembly early.
+- **Sidhe "Mab" engine** reading RenderWare 3.7 stream files with its own loader; **Lua 5.0.2**
+  scripts (precompiled `.luc`), **ODE** physics, **FMOD** audio (its own IOP module, SIF command
+  protocol to HLE), Sony **libipu/sceMpeg** `.pss` movies (2.1 GB of the disc), libgraph GS
+  path with VU1 microcode.
+- File I/O goes through the game's own `DISK.MAP` (LBA table), so a host cdvd layer can serve
+  reads straight from the ISO.
+- `scripts/key_sequence/*.txt` are the developers' own input-replay scripts: the future
+  autopilot for smoke tests.
+
+## Blockers / needs the user
+1. **PCSX2** for the oracle traces (not installed; its install needs an OK). Needed before
+   Layer 1's exit test, not before the analyzer run.
+2. **Publishing the repo on GitHub** (public), which the recomp.fyi row needs.
+3. Every build, codegen or run still needs an OK first.
 
 ## Next steps
-1. Get the user's OK for: the Linux host choice, downloading chdman, installing PCSX2.
-2. Layer 0: `tools/extract.sh <chd>` (or the chdman step on Windows), fill FINDINGS.md: game
-   ID, ELF hash, segments, IRX list, movie/audio formats, overlays yes/no. Open the ELF in REA
-   or Ghidra and count functions.
-3. Boot the dump in PCSX2 once; save the title-screen frame to `private/reference/`.
-4. Pin PS2Recomp, read its runtime to see what exists versus is stubbed; write the Layer 1 and
-   Layer 2 findings into PLAN.md's open questions.
+1. Ask the user: publish to GitHub now (then recomp.fyi), and install PCSX2.
+2. `tools/setup.sh` in WSL: pin PS2Recomp, copy its LICENSE into `LICENSES/`, list it in
+   NOTICE, read `ps2xRuntime`/`ps2xIOP` to see what exists versus is stubbed. Write the result
+   into PLAN.md's open questions.
+3. Run `ps2xAnalyzer` on `port/assets/SLUS_216.27` → `port/jackass.toml`; compare its function
+   count with the ~16.6k `jr $ra` sites and a REA/Ghidra disassembly; note Metrowerks idioms it
+   misses.
+4. PCSX2 once installed: boot the ISO, save the title-screen frame and the EE/IOP log to
+   `private/reference/`.
+5. Layer 1 (memory map + ELF loader) with its test.
 
 ## How it is built and run
-Not yet. The intended loop, once the scripts exist:
+Not yet. The intended loop, once the scripts exist (all inside WSL):
 ```
-tools/extract.sh /path/to/Jackass.chd      # once
+tools/extract.sh /mnt/c/.../Jackass.chd     # done once; re-run only to redo port/assets
+tools/setup.sh                              # PS2Recomp pin + build
 tools/build.sh [-j 14]                      # analyze → recompile → cmake build
 tools/smoke.sh                              # headless boot, log in port/logs/
-tools/launch.sh                             # play
+tools/launch.sh                             # play (WSLg or a Linux desktop)
 ```
 
 ## Where things live
@@ -60,5 +85,5 @@ tools/launch.sh                             # play
 - `tools/`: scripts above; `tools/patches/` for PS2Recomp patches (none yet).
 - `port/`: the PS2Recomp project (assets, toml, src, generated).
 - `native/`: the GS replacement (software rasterizer, then Vulkan).
-- `private/` (ignored): disc images, PCSX2 traces, captures.
+- `private/` (ignored): the ISO, disc listing, later PCSX2 traces and captures.
 - Sister repos: `../graw360-recomp` (scripts and docs to copy from), `../fear360-recomp`.

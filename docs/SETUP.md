@@ -6,7 +6,11 @@ current as the scripts land.
 ## Requirements
 - Linux, x86-64 or ARM64 (Debian/Ubuntu, Arch and SteamOS are the tested targets once there are
   any). On Windows, WSL2 Ubuntu works for building; running the game wants a real Linux desktop
-  or WSLg with Vulkan.
+  or WSLg with Vulkan. What the development machine uses (Ubuntu 26.04 under WSL2):
+  ```bash
+  sudo apt install build-essential clang lld cmake ninja-build git python3 pkg-config \
+       mame-tools libvulkan-dev vulkan-tools glslc libsdl3-dev
+  ```
 - `git`, `python3` (3.10+), `clang` 17+ (or the LLVM 20 that `tools/setup.sh` fetches), `cmake`
   3.25+, `ninja`, the Vulkan SDK or `libvulkan-dev` + `glslc`/`glslangValidator`, SDL3 (built by
   the project if not installed).
@@ -27,7 +31,10 @@ tools/launch.sh                                  # play
 ```
 
 `tools/extract.sh` accepts an `.iso` too, and `tools/iso9660.py list <iso>` shows what is on the
-disc without extracting it.
+disc without extracting it. CD-type CHDs (made from a cue/bin, as Redump-verified PS2 dumps often
+are) come out of `chdman extractdvd` as raw 2448-byte frames; the script detects that and
+rewrites them as a plain ISO (`tools/iso9660.py toiso`). About 7 GB of free space is needed
+while it runs (raw frames, the ISO, and the extracted files); the raw file is deleted at the end.
 
 ## What each step does
 - **setup.sh**: clones `ran-j/PS2Recomp` at the pinned commit (`third_party/PS2Recomp.commit`),

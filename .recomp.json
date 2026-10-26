@@ -4,14 +4,15 @@
   "system": "PlayStation 2",
   "type": "recomp",
   "original": {
-    "region": "USA"
+    "region": "USA",
+    "id": "SLUS-21627"
   },
   "project": "Jackass PS2 Recompiled",
   "status": "planning",
   "targets": ["Linux", "Linux (ARM64)", "Windows"],
   "toolchain": "PS2Recomp",
-  "approach": "The PS2 executable statically recompiled to C++ with PS2Recomp, with a game-specific runtime and a native renderer standing in for the Graphics Synthesizer. Linux first, built bottom up one hardware layer at a time.",
-  "notes": "Recon stage. No game data included: bring your own PS2 copy.",
+  "approach": "The PS2 executable (SLUS-21627) statically recompiled to C++ with PS2Recomp, with a game-specific runtime and a native renderer standing in for the Graphics Synthesizer. Linux first, built bottom up one hardware layer at a time, each checked against PCSX2.",
+  "notes": "Recon done: single stripped Metrowerks ELF, no overlays; Sidhe's Mab engine, Lua 5.0.2, ODE physics, FMOD audio, .pss movies. Next: PS2Recomp analyzer run. No game data included: bring your own PS2 copy.",
   "maintainers": [
     {
       "name": "Juansolo457",

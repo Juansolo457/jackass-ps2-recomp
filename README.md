@@ -30,10 +30,11 @@ the layers and their exit criteria.
 
 ## Status
 
-**Phase 0: recon.** Nothing boots yet. The disc is in hand (USA, CHD, Redump-verified); the next
-steps are to extract it, identify the executable (`SLUS_xxx.xx`), its IRX modules and any code
-overlays, and run PS2Recomp's analyzer over it. [docs/HANDOFF.md](docs/HANDOFF.md) is the
-current state.
+**Layer 0, recon: done.** Nothing boots yet. The USA disc (`SLUS_216.27`) is extracted and
+characterised in [docs/FINDINGS.md](docs/FINDINGS.md): one stripped Metrowerks-built ELF with no
+code overlays, Sidhe's own "Mab" engine on RenderWare-format data, Lua 5.0.2 scripts, ODE
+physics, FMOD audio and Sony `.pss` movies. Next is pinning PS2Recomp and running its analyzer
+over the executable. [docs/HANDOFF.md](docs/HANDOFF.md) is the current state.
 
 - [docs/SETUP.md](docs/SETUP.md): Linux toolchain and build from your own disc
 - [docs/HANDOFF.md](docs/HANDOFF.md): current state, how things work, where things live
@@ -52,8 +53,8 @@ tools/build.sh                                      # analyze, recompile, build
 tools/launch.sh                                     # play
 ```
 
-Supported disc: USA (`SLUS_xxx.xx`; the ELF's SHA-256 is recorded in
-[docs/FINDINGS.md](docs/FINDINGS.md) once extracted and the build checks it).
+Supported disc: USA, `SLUS_216.27` (the ELF's SHA-256 is in [docs/FINDINGS.md](docs/FINDINGS.md);
+the build will check it).
 
 ## Layout
 

@@ -29,13 +29,16 @@ Native **Linux-first** (x86-64 and ARM64, Windows later) build of the PlayStatio
 - `port/` is the PS2Recomp project: `port/assets/` = the extracted disc, `port/jackass.toml`
   the analyzer/recompiler config (function hints, stubs, overlays), `port/src/` our host code.
   Fix missing or wrong function entries in the config, never in generated code.
-- Supported executable: the USA `SLUS_xxx.xx` (ID and SHA-256 to be filled in FINDINGS.md at
-  extraction).
+- Supported executable: the USA `SLUS_216.27`, SHA-256
+  `a6b5dd8013264f40a6af85b1461aa34647bb9a1848b7190d29f9426f90913701` (FINDINGS.md).
 - `third_party/PS2Recomp` is the pinned upstream checkout plus `tools/patches/`; `.tools/` holds
   clang/LLVM, CMake, Ninja and chdman. `tools/build.sh` runs analyze → recompile → CMake build.
   Build with 12–14 jobs on the user's machine.
-- The Linux build host is undecided (WSL2 is not installed; the user also has a Steam Deck).
-  Scripts are POSIX shell and must work on Debian/Ubuntu, Arch (Deck) and ARM64.
+- The Linux build host is WSL2 Ubuntu 26.04 on this PC (distro `Ubuntu`, user `jj`):
+  `wsl.exe -d Ubuntu -u jj -- bash -c 'cd /mnt/c/Users/JJ-PC/source/repos/jackass-ps2-recomp && ...'`.
+  Scripts are POSIX shell and must also work on Arch (Steam Deck) and ARM64.
+- After each stopping point the user wants the recomp.fyi row updated: `.recomp.json` at the
+  root is what the board reads (daily, once the repo is public on GitHub).
 - `tools/smoke.sh` for headless boot checks (log in `port/logs/`), `tools/launch.sh` to play.
 
 ## Conventions
