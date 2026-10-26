@@ -1,0 +1,26 @@
+jackass-ps2-recomp: licensing notice
+
+This repository's own code is MIT (LICENSE). Third-party code it carries, copies or patches
+keeps its own terms; the full texts go in LICENSES/ and LICENSES/PROVENANCE.md says where each
+text comes from. Nothing copied is relicensed as MIT.
+
+1. This project's own code: MIT (LICENSE)
+   tools/ (except tools/patches/), docs/, port/src/, native/, port/CMakeLists.txt,
+   port/jackass.toml and the top-level files, except where a file's header says otherwise.
+   tools/audit_repo.py comes from the sibling fear360-recomp and graw360-recomp projects (MIT,
+   same author), adapted for PS2 file types.
+
+2. PS2Recomp (https://github.com/ran-j/PS2Recomp)
+   third_party/PS2Recomp (not tracked) is the pinned upstream checkout; tools/patches/*.patch
+   are this project's changes to it and are under PS2Recomp's own license. Its license text
+   and exact terms are recorded in LICENSES/ when the checkout is pinned (tools/setup.sh),
+   before any of its code or scaffolding is tracked here.
+
+3. God of War native ports (Waffle565/God-Of-War-Native-Port and forks)
+   Studied as the model for the runtime and renderer. The KIexster fork is listed as GPL-3.0.
+   No code from them is in this repository yet; if any is copied, it goes under its own
+   license in a clearly marked directory and is listed here with its upstream commit.
+
+4. Reference material
+   PCSX2 (GPL-3.0) and the PS2 hardware manuals are consulted, not copied. Any code taken from
+   PCSX2 would make the directory that holds it GPL and must be listed here.

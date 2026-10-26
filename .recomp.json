@@ -1,0 +1,21 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Jackass: The Game",
+  "system": "PlayStation 2",
+  "type": "recomp",
+  "original": {
+    "region": "USA"
+  },
+  "project": "Jackass PS2 Recompiled",
+  "status": "planning",
+  "targets": ["Linux", "Linux (ARM64)", "Windows"],
+  "toolchain": "PS2Recomp",
+  "approach": "The PS2 executable statically recompiled to C++ with PS2Recomp, with a game-specific runtime and a native renderer standing in for the Graphics Synthesizer. Linux first, built bottom up one hardware layer at a time.",
+  "notes": "Recon stage. No game data included: bring your own PS2 copy.",
+  "maintainers": [
+    {
+      "name": "Juansolo457",
+      "link": "https://github.com/Juansolo457"
+    }
+  ]
+}
