@@ -39,6 +39,7 @@ SDK bindings. [docs/HANDOFF.md](docs/HANDOFF.md) is the current state;
 - [docs/PLAN.md](docs/PLAN.md): the bottom-up layers to the title screen, then play, then speed
 - [docs/FINDINGS.md](docs/FINDINGS.md): what the disc and the executable are
 - [docs/REFERENCES.md](docs/REFERENCES.md): every PS2 recomp this is modelled on, and the two runtime styles
+- [docs/STEAMDECK.md](docs/STEAMDECK.md): what a Steam Deck test build needs
 
 ## Build and run (Linux)
 

@@ -54,5 +54,8 @@ without extracting it. CD-type CHDs (made from a cue/bin, as Redump-verified PS2
 - **build.sh / launch.sh** (to write): `cmake --build build/linux`; the game runs with the ELF's folder
   (`game/`) as the CD root and a PCSX2-compatible memory card next to it.
 
+Steam Deck: [STEAMDECK.md](STEAMDECK.md) (a container build for SteamOS's libraries, bundled `.so`s, the
+private package).
+
 Never copy game files into tracked folders; `python3 -I tools/audit_repo.py` tells you if git would publish
 any.

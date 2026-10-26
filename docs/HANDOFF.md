@@ -95,6 +95,12 @@ KIexster); it changes once the route is chosen.
 Identifiers for the profile (computed 2026-10-26): PCSX2 CRC and the code-section SHA-1 are in
 FINDINGS.md ("The executable").
 
+## Steam Deck (2026-10-26)
+The user wants to see the build on their Deck. [STEAMDECK.md](STEAMDECK.md): a native Linux build must be
+made in the Steam Linux Runtime "sniper" container (or on the Deck in distrobox) so it runs on SteamOS's
+glibc; bundle `libpcsx2gs.so`, SDL3 and shaderc; package like fear360's `tools/steamdeck/`. A checklist of
+commands for the user to run on the Deck is in that doc; their output decides the packaging route.
+
 ## Next steps
 1. `tools/setup.sh` in WSL (needs the user's OK: it clones and builds). Expect CMake fixes for the
    checkout's `runtime/` and `pcsx2-gs` built from our top level; each fix becomes
