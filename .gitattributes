@@ -1,0 +1,6 @@
+# Linux-first: everything text is LF in the repo and on checkout, so the shell scripts run.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.chd binary
+*.iso binary
