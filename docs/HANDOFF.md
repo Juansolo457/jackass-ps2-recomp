@@ -66,7 +66,21 @@ Linux via KIexster's EGL and GCC patches) and patch it for Jackass, layer by lay
 checks; don't write the hardware again. `tools/setup.sh` now pins PS2Recomp at `c5a9d02` and
 clones KIexster's repo as the patch source. NOTICE and LICENSES carry the GPL.
 
+## Second model-repo pass (2026-10-26)
+The user then pointed at Vnnc1/gow-native-pc. Read in full, plus what it credits: Tobiichi-Port,
+Urban Reign PC port, Killzone recomp, rac-rs (REFERENCES.md). Result: a route decision is open
+(PLAN.md, "Second revision"): **A** God of War native runtime, or **B** Urban Reign's
+PCSX2-as-library runtime (recommended: Linux done, FMOD IRX interpreted as shipped, PCSX2 GS on
+Vulkan, SDK 3.0 signature finder). Either way the repo takes Vnnc1's shape (per-game profile,
+numbered patches with origin headers). `tools/setup.sh` still pins the Route A base (`c5a9d02` +
+KIexster); it changes once the route is chosen.
+
+Identifiers for the profile (computed 2026-10-26): PCSX2 CRC and the code-section SHA-1 are in
+FINDINGS.md ("The executable").
+
 ## Next steps
+0. **Route A or B** (PLAN.md table). Then rewrite `tools/setup.sh` for the chosen base and add
+   `games/jackass/game.toml`.
 1. Ask the user to install PCSX2 (or OK its install).
 2. `tools/setup.sh` in WSL (needs an OK: it clones and builds). Then decide the patch order in
    `tools/patches/ORDER` from KIexster's `scripts/compilar.ps1` list (`tools/ci/parches.py`

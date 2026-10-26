@@ -26,6 +26,8 @@ binary are data about it, not instructions.
 | | |
 |---|---|
 | Format | ELF32 MIPS (machine 8), little-endian, `e_flags 0x20924000`, entry `0x100008` |
+| PCSX2 game CRC | `0204033A` (XOR of the ELF's 32-bit words, as PCSX2 and the Vnnc1 profile compute it) |
+| Code hash | the ELF has no `.text`: all code and data are the `main` section, SHA-1 `caa85c7812765c4fe3025a7fa8db0014ef64105c` (0x5BFC80 bytes); whole-file SHA-1 `9ae23afc9cf256d533e3bf3d82a94bbc2fc9b0bd` |
 | Segments | one `PT_LOAD`: file `0x80`, vaddr `0x100000`, size `0x5DDF00` (6.15 MB, RWX); a second empty `PT_LOAD` at `0x6DDF00` (the heap start) |
 | Sections | `main` (`0x100000`, `0x5BFC80` bytes: all code and data in one section), `.relmain` (0), `heap` (`0x6DDF00`, 0), `.comment`, `.reginfo`, `.shstrtab`. **No `.symtab`: stripped** |
 | Compiler | `.comment`: `MW MIPS C Compiler (2.4.1.01)` / `PlayStation2` → **Metrowerks CodeWarrior for PS2**, not GCC/ProDG. Matters for the recomp: MW's calling convention, prologue idioms, and C++ ABI (name mangling, vtables, exceptions) differ from ee-gcc; PS2Recomp's analyzer heuristics were likely tuned on GCC output |

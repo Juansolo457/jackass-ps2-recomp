@@ -64,6 +64,25 @@ part, not the bottom-up verification:
   modules, which removes the FMOD HLE concern from Layer 6; the Metrowerks function boundaries and
   the Sony-library stub addresses are the first things to establish (Layer 2).
 
+**Second revision, same day (the user pointed at Vnnc1/gow-native-pc; its credits led to the
+Urban Reign and Killzone ports, REFERENCES.md):** there are two runtime styles on PS2Recomp, and
+the one that fits a non-God-of-War game on Linux is not the God of War one.
+
+| Route | A: God of War native runtime (Tobiichi/Waffle565 via Vnnc1's patches) | B: PCSX2-as-library runtime (Urban Reign's `runtime/` + `thirdparty/pcsx2-gs`) |
+|---|---|---|
+| First boot cost | High: function map, stubs for every Sony lib, FMOD's SIF protocol HLE'd (sound engine is 989snd-shaped), native GS tuned to GoW's draws, libmpeg2 movie path | Lower: the IOP interpreter **runs FMODS.IRX, PADMAN, MCMAN as shipped**; PCSX2's GS draws any GIF stream; `.pss` on the emulated IPU; SDK 3.0 signatures vs SotC's symbol ELF already written (Jackass is SDK 3.0) |
+| Linux | Tobiichi works on Linux (raylib GL window); Vnnc1's patches are Windows/clang-mingw | Done end to end with Clang in 4 min builds, Vulkan GS, `.deb`/`.tar.gz` releases |
+| ARM64 | GL 4.3 via Mesa; Waffle's Switch build is the data point (9–12 fps on A57) | PCSX2's Vulkan GS and the runtime's SSE4.1 intrinsics need NEON work (ran-j's CMake has an "ARM64 NEON flags" branch; untested) |
+| Native renderer | is the renderer | later, pass by pass over the PCSX2 path with golden images, exactly like GRAW's D3D12 renderer over Xenos |
+| Performance ceiling | highest (60 fps on integrated GPUs) | PCSX2 GS is heavier; Urban Reign still holds 60 fps at 8x on a GTX 1660 |
+| Matches our 360 experience | no (Lost Odyssey-style: months before first light) | yes (ReXGlue-style: emulator-derived GPU first, then native) |
+
+**Recommendation: Route B, with Vnnc1's repository shape** (`games/jackass/game.toml` profile,
+numbered `engine/patches/NN-*.patch` with origin headers, `identify.py`-style disc check by CRC
+and code hash) and KIexster's conventions. The bottom-up layers stay as the verification ladder
+(each layer's PCSX2 comparison still gates the next), but the runtime under them is Urban Reign's,
+so the first window appears at Layer 2–3 instead of Layer 6. Decision pending the user.
+
 ## Layers (each with its exit test)
 
 ### Layer 0: dump and recon
