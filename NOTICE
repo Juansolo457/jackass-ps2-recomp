@@ -1,29 +1,33 @@
 jackass-ps2-recomp: licensing notice
 
-This repository's own code is MIT (LICENSE). Third-party code it carries, copies or patches
-keeps its own terms; the full texts go in LICENSES/ and LICENSES/PROVENANCE.md says where each
-text comes from. Nothing copied is relicensed as MIT.
+This repository's own code is MIT (LICENSE). Third-party code it carries, copies or patches keeps its own
+terms; the full texts are in LICENSES/ and LICENSES/PROVENANCE.md says where each text comes from. Nothing
+copied is relicensed as MIT.
 
 1. This project's own code: MIT (LICENSE)
-   tools/ (except tools/patches/), docs/, port/src/, native/, port/CMakeLists.txt,
-   port/jackass.toml and the top-level files, except where a file's header says otherwise.
-   tools/audit_repo.py comes from the sibling fear360-recomp and graw360-recomp projects (MIT,
-   same author), adapted for PS2 file types.
+   tools/ (except as noted), docs/, games/, engine/runtime.toml, engine/README.md and the top-level files,
+   except where a file's header says otherwise. tools/audit_repo.py comes from the sibling fear360-recomp and
+   graw360-recomp projects (MIT, same author), adapted for PS2 file types. tools/profile.py and
+   tools/identify.py follow the design of Vnnc1/gow-native-pc's tools/pipeline/profile.py and
+   tools/disc/identify.py (GPL-3.0) but are written here; CMakeLists.txt follows the structure and flags of the
+   Urban Reign port's top-level CMakeLists.txt (GPL-3.0).
 
 2. GNU GPL version 3 or later (LICENSES/GPL-3.0.txt)
-   - PS2Recomp (https://github.com/ran-j/PS2Recomp) is GPL-3.0. third_party/PS2Recomp (not
-     tracked) is the pinned checkout; tools/patches/*.patch are this project's changes to it and
-     are under the GPL as well.
-   - Waffle565's runtime (https://github.com/Waffle565/God-Of-War-Native-Port, branch `runtime`,
-     a fork of PS2Recomp) and KIexster's patch stack
-     (https://github.com/KIexster/god-of-war-recomp, GPL-3.0), when tools/setup.sh fetches them
-     into third_party/ (not tracked), keep the GPL. Parts of that runtime originate in PCSX2
-     (GPL-3.0+: `ee_ref/`, `vu_pcsx2/`) and in LightVelox's Shadow of the Colossus fork.
-   - port/src/overrides/ (game-function overrides compiled into the runtime) and any file that
-     includes the runtime's headers are GPL-3.0-or-later; their headers say so. The program
-     tools/build.sh produces links all of this and is distributed, if ever, under the GPL v3 or
-     later. Releases stay source only regardless (README, "Legal").
+   - The runtime (engine/runtime/, not tracked; engine/runtime.toml pins it): the Urban Reign PC port
+     (https://github.com/thiagordsfx/urban-reign-recomp, GPL-3.0), which carries PS2Recomp
+     (https://github.com/ran-j/PS2Recomp via TaylorNAlbarnaz/PS2Recomp `sotc-port`, GPL-3.0) with that port's
+     changes, and PCSX2's GS (https://github.com/PCSX2/pcsx2, GPL-3.0; its 3rdparty libraries keep their own
+     licenses) with the port's C-API wrapper. Its runtime/ps2xRuntime/src/lib/ipu is the Ace Combat 5 static
+     recompilation's IPU (Apache-2.0, LICENSES/AC5-Recomp-APACHE-2.0.txt once copied from the checkout).
+   - engine/patches/*.patch are this project's changes to that checkout and are under the GPL as well.
+   - src/ (host code compiled with the runtime's headers), recomp/jackass.toml and the generated code are
+     GPL-3.0-or-later; their headers say so. The program the build produces links all of this and is
+     distributed, if ever, under the GNU GPL v3 or later. Releases stay source only regardless (README,
+     "Legal").
+   - Studied, not copied: the God of War ports (Waffle565, KIexster, YYOzcan/Tobiichi-Port, Vnnc1), the
+     Killzone recomp (drakolordx7), all GPL-3.0. If code from them is ever taken, it goes in a marked place
+     with its upstream commit and is listed here.
 
 3. Reference material
-   PCSX2 (GPL-3.0) and the PS2 hardware manuals are consulted, not copied. Any code taken from
-   PCSX2 directly would go under the GPL in a marked directory and be listed here.
+   PCSX2 and the PS2 hardware manuals are consulted; PCSX2 code reaches this project only through the
+   runtime checkout above.

@@ -1,89 +1,88 @@
 # Jackass PS2 Recompiled
 
-The PlayStation 2 **Jackass: The Game** (Sidhe Interactive / Red Mile Entertainment, 2007),
-statically recompiled to run natively on **Linux first** (x86-64 and ARM64), then Windows, with a
-native renderer in place of the Graphics Synthesizer.
+The PlayStation 2 **Jackass: The Game** (Sidhe Interactive / Red Mile Entertainment, 2007, `SLUS-21627`),
+statically recompiled to run natively on **Linux first** (x86-64, then ARM64), then Windows.
 
-> Unofficial. **No game data included.** Bring your own PS2 disc. Releases, when there are any,
-> are source only: you build from your own disc.
+> Unofficial. **No game data included.** Bring your own PS2 disc. Releases, when there are any, are source
+> only: you build from your own disc.
 
 ## What it is
 
-A **static recompilation**: the game's Emotion Engine (MIPS R5900) code is translated to C++
-ahead of time with [PS2Recomp](https://github.com/ran-j/PS2Recomp), and a game-specific runtime
-stands in for the PS2's hardware (EE memory map and kernel, VU0/VU1, VIF/GIF DMA, GS, IOP, SPU2,
-pad, memory card). Not an emulator, not a decompilation. The model is the 2026 wave of
-**God of War** PS2 native ports built on PS2Recomp
-([Waffle565/God-Of-War-Native-Port](https://github.com/Waffle565/God-Of-War-Native-Port) and its
-forks: [KIexster](https://github.com/KIexster/god-of-war-recomp),
-[igormcsouza](https://github.com/igormcsouza/god-of-war-recomp) with a Linux Vulkan compute GS,
-[CodeAbhi826](https://github.com/CodeAbhi826/God-Of-War-Recomp) for Android/Vulkan,
-[YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port)); the project conventions come
-from our own Xbox 360 recomps, [fear360-recomp](https://github.com/Juansolo457/fear360-recomp)
-and [graw360-recomp](https://github.com/Juansolo457/graw360-recomp).
+A **static recompilation**: the game's Emotion Engine (MIPS R5900) code is translated to C++ ahead of time with
+[PS2Recomp](https://github.com/ran-j/PS2Recomp), and a runtime stands in for the PS2. Not an emulator of the
+CPU, not a decompilation. The runtime is the one the [Urban Reign PC port](https://github.com/thiagordsfx/urban-reign-recomp)
+built on PS2Recomp: the game's own IRX modules (pad, memory card, FMOD sound) run on an R3000A interpreter,
+VU1 microcode is recorded and compiled ahead of time, movies go through an emulated IPU, and the picture is
+drawn by **PCSX2's hardware GS as a library**, on Vulkan on Linux, so internal resolution, filters and texture
+packs work as in PCSX2. A native renderer is a later phase, pass by pass over that one.
 
-The runtime is brought up **bottom up**, one hardware layer at a time, each verified against PCSX2
-before the next is started: memory and ELF loading, the recompiled EE code and kernel syscalls,
-DMA and the VIF/GIF paths, VU1, the GS, the IOP side (CD-ROM, FMOD, pad), and only then the title
-screen. Each layer starts from Waffle565's native runtime (as KIexster's repo does) and is patched
-for what Jackass needs, rather than written again. [docs/PLAN.md](docs/PLAN.md) has the layers and
-their exit criteria.
+The repository is shaped like [Vnnc1/gow-native-pc](https://github.com/Vnnc1/gow-native-pc): one
+[game profile](games/jackass/game.toml) holds every game-specific value, the runtime is a pinned checkout
+([engine/runtime.toml](engine/runtime.toml)) with numbered patches, and the conventions come from
+[KIexster/god-of-war-recomp](https://github.com/KIexster/god-of-war-recomp) and our own Xbox 360 recomps,
+[fear360-recomp](https://github.com/Juansolo457/fear360-recomp) and
+[graw360-recomp](https://github.com/Juansolo457/graw360-recomp). The runtime is brought up **bottom up**: each
+hardware layer is run on Jackass, compared with PCSX2, then patched, before the next one. Why these choices:
+[docs/REFERENCES.md](docs/REFERENCES.md).
 
 ## Status
 
-**Layer 0, recon: done.** Nothing boots yet. The USA disc (`SLUS_216.27`) is extracted and
-characterised in [docs/FINDINGS.md](docs/FINDINGS.md): one stripped Metrowerks-built ELF with no
-code overlays, Sidhe's own "Mab" engine on RenderWare-format data, Lua 5.0.2 scripts, ODE
-physics, FMOD audio and Sony `.pss` movies. Next is pinning PS2Recomp and running its analyzer
-over the executable. [docs/HANDOFF.md](docs/HANDOFF.md) is the current state.
+**Planned: recon done, nothing recompiled yet.** The USA disc is extracted and characterised in
+[docs/FINDINGS.md](docs/FINDINGS.md): one stripped Metrowerks-built ELF with no code overlays, Sidhe's own
+"Mab" engine on RenderWare-format data, Lua 5.0.2 scripts, ODE physics, FMOD audio on the IOP and Sony
+`.pss` movies. Next: the runtime checkout and its first build, then the function map (Ghidra) and the Sony
+SDK bindings. [docs/HANDOFF.md](docs/HANDOFF.md) is the current state;
+[docs/PLAN.md](docs/PLAN.md) the layers and their exit criteria.
 
 - [docs/SETUP.md](docs/SETUP.md): Linux toolchain and build from your own disc
 - [docs/HANDOFF.md](docs/HANDOFF.md): current state, how things work, where things live
 - [docs/PLAN.md](docs/PLAN.md): the bottom-up layers to the title screen, then play, then speed
 - [docs/FINDINGS.md](docs/FINDINGS.md): what the disc and the executable are
-- [docs/REFERENCES.md](docs/REFERENCES.md): the projects and documents this is modelled on
+- [docs/REFERENCES.md](docs/REFERENCES.md): every PS2 recomp this is modelled on, and the two runtime styles
 
 ## Build and run (Linux)
 
 [docs/SETUP.md](docs/SETUP.md) has the details. In short, once the pipeline exists:
 
 ```bash
-tools/setup.sh                                      # PS2Recomp (pinned), clang, CMake, Ninja, chdman, Vulkan SDK
-tools/extract.sh /path/to/your/Jackass.chd          # CHD -> ISO -> port/assets/
-tools/build.sh                                      # analyze, recompile, build
-tools/launch.sh                                     # play
+tools/setup.sh                                  # runtime checkout + patches; builds ps2_recomp and libpcsx2gs.so
+tools/extract.sh /path/to/your/Jackass.chd      # CHD or ISO -> game/
+python3 -I tools/identify.py game               # is this the supported disc?
+tools/generate.sh && tools/build.sh             # recompile, build (not written yet)
+tools/launch.sh                                 # play (not written yet)
 ```
 
-Supported disc: USA, `SLUS_216.27` (the ELF's SHA-256 is in [docs/FINDINGS.md](docs/FINDINGS.md);
-the build will check it).
+Supported disc: USA, `SLUS_216.27` (the profile records its CRC and code hash; `identify.py` checks them).
 
 ## Layout
 
 ```
-port/        the PS2Recomp project: port/assets/ (your disc, ignored), port/jackass.toml (analyzer
-             config: function hints, stubs, overlays), port/src/ our host code, port/generated/ (ignored)
-native/      the native renderer (GS replacement): software rasterizer first, then Vulkan
-tools/       setup, extract, build, launch, smoke, analysis tools, audit
-docs/        setup, plan, handoff, findings, references
-third_party/ the pinned PS2Recomp checkout and other sources tools/setup.sh fetches (ignored)
-private/     your disc images, captures and logs (ignored)
+games/jackass/   game.toml: every game-specific value (ELF, hashes, disc layout, middleware, optimize script)
+engine/          runtime.toml (which runtime, pinned) + patches/NN-*.patch (our changes, with origin headers)
+recomp/          PS2Recomp config and the Ghidra function map (to come)
+src/             our host code: main, disc check, SDK HLE bindings, hooks (to come)
+tools/           setup, extract, identify, profile, ISO/CHD readers, audit
+docs/            setup, plan, handoff, findings, references
+game/            your extracted disc (ignored)
+engine/runtime/  the runtime checkout (ignored); generated/, data/, build/ (ignored)
+private/         your disc images, traces and captures (ignored)
 ```
 
 ## Legal
 
-- No assets, executables, generated code or proprietary code are distributed. Never attach
-  builds or game files to a release. Before pushing, run `python3 -I tools/audit_repo.py`
-  (CI runs it too).
-- Our own tools, docs and glue: **MIT** ([LICENSE](LICENSE)). PS2Recomp, Waffle565's runtime and
-  KIexster's patches are **GPL-3.0**, and so are our patches and overrides on them and the program
-  the build produces ([NOTICE](NOTICE), full text in [LICENSES/](LICENSES/)).
-- Jackass is a trademark of MTV Networks / Paramount. Not affiliated with Paramount, Red Mile
-  Entertainment, Sidhe or Sony Interactive Entertainment.
+- No assets, executables, generated code or proprietary code are distributed. Never attach builds or game files
+  to a release. Before pushing, run `python3 -I tools/audit_repo.py` (CI runs it too).
+- Our own tools, docs and glue: **MIT** ([LICENSE](LICENSE)). The runtime (Urban Reign port, PS2Recomp,
+  PCSX2) is **GPL-3.0**, and so are our patches and host code on it and the program the build produces
+  ([NOTICE](NOTICE), full text in [LICENSES/](LICENSES/)).
+- Jackass is a trademark of MTV Networks / Paramount. Not affiliated with Paramount, Red Mile Entertainment,
+  Sidhe or Sony Interactive Entertainment.
 
 ## Credits
 
 - Sidhe Interactive and Red Mile Entertainment: the game
 - ran-j and contributors: [PS2Recomp](https://github.com/ran-j/PS2Recomp)
-- Waffle565 and the God of War recomp forks: the runtime and renderer approach this follows
-- The [PCSX2](https://github.com/PCSX2/pcsx2) team: the reference for every PS2 hardware question
+- thiagordsfx: the [Urban Reign PC port](https://github.com/thiagordsfx/urban-reign-recomp), whose runtime and
+  Linux build this stands on; the [PCSX2](https://github.com/PCSX2/pcsx2) team: the GS and the reference
+- Waffle565, KIexster, YYOzcan, Vnnc1, drakolordx7: the God of War and Killzone ports this learned from
 - Built with [Claude Code](https://claude.com/claude-code)

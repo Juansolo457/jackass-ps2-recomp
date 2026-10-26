@@ -81,7 +81,8 @@ the one that fits a non-God-of-War game on Linux is not the God of War one.
 numbered `engine/patches/NN-*.patch` with origin headers, `identify.py`-style disc check by CRC
 and code hash) and KIexster's conventions. The bottom-up layers stay as the verification ladder
 (each layer's PCSX2 comparison still gates the next), but the runtime under them is Urban Reign's,
-so the first window appears at Layer 2–3 instead of Layer 6. Decision pending the user.
+so the first window appears at Layer 2–3 instead of Layer 6. **Decided: Route B (the user,
+2026-10-26).** The repository was reshaped the same day (HANDOFF.md, "Route B chosen").
 
 ## Layers (each with its exit test)
 

@@ -1,10 +1,11 @@
-# What must never be committed: anything from the game (its disc, executables, modules, assets,
-# translations of its code, data derived from it) and anything built from it. tools/audit_repo.py
-# checks what is tracked and staged; CI runs it on every push (README.md, "Legal").
+# What must never be committed: anything from the game (its disc, executables, modules, assets, translations of
+# its code, data derived from it) and anything built from it. tools/audit_repo.py checks what is tracked and
+# staged; CI runs it on every push (README.md, "Legal").
 
-# --- The game: your disc and everything extracted, dumped or captured from it ---
+# --- The game: your disc and everything extracted, dumped, recorded or captured from it ---
 private/
-/port*/assets
+/game/
+/data/
 *.chd
 *.iso
 *.cue
@@ -13,31 +14,37 @@ private/
 *.elf
 *.irx
 *.pss
+*.nps
 *.ipu
 *.vag
 *.adx
+*.fsb
 SLUS_*
 SLES_*
 SCUS_*
 SCES_*
 SYSTEM.CNF
+DISK.MAP
 
-# --- Generated translations of the game's code ---
-/port*/generated/
+# --- Generated translations of the game's code, recorded VU1 microcode, dumped IOP modules ---
+/generated/
+/generated_*/
+vu1_capture/
+iop_modules/
 
-# --- Runtime state: logs, saves, settings, shader caches, crash dumps ---
-/port*/logs/
-/port*/user*/
-/port*/cache*/
-/port*/memcard*/
+# --- The runtime checkout (engine/runtime.toml) and anything else fetched ---
+/engine/runtime/
+/third_party/
+.tools/
+
+# --- Build output, runtime state ---
+/build/
+/out/
 *.log
 *.dmp
 *.ps2
-
-# --- Build output (programs built from the game's code) and packages ---
-/port*/out/
-build/
-out/
+*.state
+shadercache*/
 *.exe
 *.dll
 *.so
@@ -50,10 +57,6 @@ out/
 *.zip
 *.7z
 *.rar
-
-# --- Toolchain and upstream checkouts ---
-.tools/
-third_party/
 
 # --- Editor / OS ---
 .vscode/

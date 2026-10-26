@@ -1,0 +1,18 @@
+# The runtime this project builds on. It is NOT stored in this repository: tools/setup.sh clones it into
+# engine/runtime/ at the pinned commit and applies engine/patches/*.patch in file-name order. Without it
+# nothing can be recompiled or run.
+#
+# What the checkout contains (GPL-3.0 unless noted, see NOTICE and docs/REFERENCES.md):
+#   runtime/            PS2Recomp (TaylorNAlbarnaz/PS2Recomp `sotc-port` @ ac9efa0, from ran-j/PS2Recomp) with the
+#                       Urban Reign port's changes: ps2xRuntime (EE/VU/GS/IOP host runtime, VU1 AOT, savestates,
+#                       pnach), ps2xIOP (R3000A interpreter that runs the game's own IRX modules), ps2xRecomp (the
+#                       recompiler), ps2xTest/tools (vu1_recomp, gs_replay, vu0_audit). runtime/ps2xRuntime/src/lib/ipu
+#                       is the Ace Combat 5 recomp's IPU (Apache-2.0).
+#   thirdparty/pcsx2    PCSX2 @ 2954ebe: only the files its GS needs (GPL-3.0)
+#   thirdparty/pcsx2-gs the C-API wrapper that builds PCSX2's GS as pcsx2gs.dll / libpcsx2gs.so (DX11 / Vulkan)
+#   src/, recomp/       Urban Reign's own port code and config: the model for our src/ and recomp/, not built here
+#   tools/              Ghidra function export, SDK signature finder, VIF/GS/VU tools, autotest, PINE client
+repository = "https://github.com/thiagordsfx/urban-reign-recomp"
+commit = "20b30fd731b153110bd1b60db61bc421d42586c4"   # main, 2026-10-23
+upstream_recompiler = "https://github.com/ran-j/PS2Recomp"
+pcsx2_commit = "2954ebe"

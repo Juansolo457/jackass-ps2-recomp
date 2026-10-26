@@ -32,7 +32,9 @@ The user's decisions so far:
 | `port/assets/` (ignored) | 504 files, 2.6 GB, the whole disc; `SLUS_216.27` SHA-256 matches FINDINGS.md |
 | `private/disc_listing.txt` (ignored) | `tools/iso9660.py list` output |
 | `tools/audit_repo.py` | works; run on every commit so far |
-| `tools/setup.sh` | written: pins PS2Recomp, checks tools, records the commit; **never run** |
+| `tools/setup.sh` | rewritten for Route B (Urban Reign checkout, patches, builds `ps2_recomp` + `pcsx2gs`); **never run** |
+| `CMakeLists.txt` | written, untested (see "Route B chosen") |
+| `games/jackass/game.toml`, `tools/profile.py`, `tools/identify.py` | work; identify matched `game/` and the ISO |
 | `tools/extract.sh` | **ran end to end** in WSL (chdman 1m37s + toiso/extract 1m05s). Handles CD-type CHDs |
 | `tools/iso9660.py` | works: list/extract/cat/toiso, detects 2048/2352/2448-byte frame layouts |
 | `tools/chd_info.py` | works (CHD v5 header + metadata) |
@@ -66,6 +68,21 @@ Linux via KIexster's EGL and GCC patches) and patch it for Jackass, layer by lay
 checks; don't write the hardware again. `tools/setup.sh` now pins PS2Recomp at `c5a9d02` and
 clones KIexster's repo as the patch source. NOTICE and LICENSES carry the GPL.
 
+## Route B chosen and the repo reshaped (2026-10-26)
+The user chose **Route B**: the Urban Reign PC port's runtime (PS2Recomp + PCSX2 GS on Vulkan, IRX
+interpreted), with Vnnc1's repository shape. Done the same day, nothing built:
+- `engine/runtime.toml` pins thiagordsfx/urban-reign-recomp `20b30fd` (2026-10-23); `engine/patches/` is empty.
+- `games/jackass/game.toml`: the profile (ELF, CRC `0204033A`, `main` SHA-1, disc layout, middleware).
+  `tools/profile.py` reads it; `tools/identify.py` matched both `game/` and the ISO to it.
+- `CMakeLists.txt`: adds the checkout's `runtime/` and `thirdparty/pcsx2-gs` (maps `JA_*` options onto
+  `URBAN_*`/`PS2X_*`), and `src/` once `src/CMakeLists.txt` exists. **Untested**: the checkout's CMake files
+  may use paths relative to their own top level; the first `tools/setup.sh` run will tell, and any fix goes
+  in as an `engine/patches/` patch.
+- `tools/setup.sh` rewritten: tools check, clone + pin + patches, configure, build `ps2_recomp` and `pcsx2gs`.
+- `port/` and `native/` are gone; the disc is in `game/` (the ELF's folder is the CD root, as the runtime
+  expects); `.gitignore` and the audit cover `game/`, `data/`, `generated/`, `engine/runtime/`, `.NPS`,
+  `.FSB`, `DISK.MAP`.
+
 ## Second model-repo pass (2026-10-26)
 The user then pointed at Vnnc1/gow-native-pc. Read in full, plus what it credits: Tobiichi-Port,
 Urban Reign PC port, Killzone recomp, rac-rs (REFERENCES.md). Result: a route decision is open
@@ -79,20 +96,23 @@ Identifiers for the profile (computed 2026-10-26): PCSX2 CRC and the code-sectio
 FINDINGS.md ("The executable").
 
 ## Next steps
-0. **Route A or B** (PLAN.md table). Then rewrite `tools/setup.sh` for the chosen base and add
-   `games/jackass/game.toml`.
-1. Ask the user to install PCSX2 (or OK its install).
-2. `tools/setup.sh` in WSL (needs an OK: it clones and builds). Then decide the patch order in
-   `tools/patches/ORDER` from KIexster's `scripts/compilar.ps1` list (`tools/ci/parches.py`
-   prints it), apply the Waffle runtime patch + GCC + EGL patches, and build `ps2x_tests` on
-   Linux the way their CI does (`-DPS2X_BUILD_STUDIO=OFF -march=x86-64-v2`). Record pass/fail.
-3. Function map: KIexster's `config/funcmap.csv` came from Ghidra. For Jackass, produce
-   `port/config/funcmap.csv` (Name,Start,End,Size) from a REA/Ghidra pass over the Metrowerks ELF,
-   plus the Sony library functions by name (the `sce*` strings in FINDINGS.md name the libraries;
-   signatures from the SDK 3.0 `libgraph`, `libdma`, `libpad`, `libmc`, `libcdvd`, `libsif`,
-   `libipu`/`libmpeg`), because the runtime's stubs are bound by `name@address`. Then run
-   `ps2_recomp` with a `recomp.template.toml` modelled on theirs. Compare the count with the
-   ~16.6k `jr $ra` sites.
+1. `tools/setup.sh` in WSL (needs the user's OK: it clones and builds). Expect CMake fixes for the
+   checkout's `runtime/` and `pcsx2-gs` built from our top level; each fix becomes
+   `engine/patches/01-...patch`. Install the X11/Vulkan/shaderc dev packages from SETUP.md first.
+2. Ask the user to install PCSX2 (the oracle) and Ghidra 12 + ghidra-emotionengine-reloaded (the
+   function map).
+3. Function map and SDK bindings (Layer 2): adapt the checkout's `tools/ghidra_functions.py` to
+   `game/SLUS_216.27` → `recomp/jackass_functions.csv`; run its `tools/find_sdk_functions.py` with
+   a symbol-bearing SDK 3.0 reference (Shadow of the Colossus's, as Urban Reign does; Jackass is SDK
+   3.0 too) → `src/jackass/sdk_functions.inc`. Watch Metrowerks idioms the Ghidra pass may split
+   wrongly; compare the count with the ~16.6k `jr $ra` sites.
+4. `recomp/jackass.toml` modelled on the checkout's `recomp/urban.toml` (`auto_stub_by_name = false`,
+   `direct_tail_calls = false`, Ghidra map merged); `tools/generate.sh` like their `generate.py`
+   (staging dir, copy only changed files). First `ps2_recomp` run; count functions and "No exact
+   recompiled function" cases.
+5. `src/`: a `main.cpp` modelled on the checkout's `src/main.cpp` + `urban/game_disc.cpp` +
+   `hle_bindings.cpp`, for Jackass; `src/CMakeLists.txt` from their `src/CMakeLists.txt`. First
+   boot attempt with the software GS, then `libpcsx2gs.so`.
 4. PCSX2 once installed: boot the ISO, save the title-screen frame and the EE/IOP log to
    `private/reference/`.
 5. Layer 1 (memory map + ELF loader) with its test.

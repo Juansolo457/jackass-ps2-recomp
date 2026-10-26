@@ -1,15 +1,15 @@
 #!/bin/sh
-# Turn your disc dump into port/assets/ (docs/SETUP.md):
+# Turn your disc dump into game/ (docs/SETUP.md):
 #   tools/extract.sh /path/to/Jackass.chd      # chdman extractdvd -> private/jackass.iso, then extract
 #   tools/extract.sh /path/to/Jackass.iso      # extract an ISO directly
 #   tools/extract.sh ... --list                # only list the disc
-# The dump is never modified. The ISO lands in private/ (ignored), the files in port/assets/
+# The dump is never modified. The ISO lands in private/ (ignored), the files in game/
 # (ignored). The ELF's SHA-256 is printed and, if docs/FINDINGS.md already records one, compared.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 dump=${1:?usage: tools/extract.sh <dump.chd|dump.iso> [--list]}
 mode=${2:-}
-mkdir -p "$root/private" "$root/port/assets"
+mkdir -p "$root/private" "$root/game"
 
 case "$dump" in
   *.chd|*.CHD)
@@ -38,13 +38,13 @@ if [ "$mode" = "--list" ]; then
   python3 -I "$root/tools/iso9660.py" list "$iso"
   exit 0
 fi
-python3 -I "$root/tools/iso9660.py" extract "$iso" "$root/port/assets"
+python3 -I "$root/tools/iso9660.py" extract "$iso" "$root/game"
 
-cnf=$(find "$root/port/assets" -maxdepth 1 -iname SYSTEM.CNF | head -n 1)
+cnf=$(find "$root/game" -maxdepth 1 -iname SYSTEM.CNF | head -n 1)
 if [ -n "$cnf" ]; then
   boot=$(tr -d '\r' < "$cnf" | sed -n 's/^BOOT2 *= *cdrom0:\\\(.*\);1$/\1/p' | head -n 1)
   echo "extract: SYSTEM.CNF BOOT2 = $boot"
-  elf=$root/port/assets/$boot
+  elf=$root/game/$boot
   if [ -f "$elf" ]; then
     sum=$(sha256sum "$elf" | cut -d' ' -f1)
     echo "extract: $boot SHA-256 $sum"
@@ -53,4 +53,4 @@ if [ -n "$cnf" ]; then
     else echo "extract: WARNING: hash differs from docs/FINDINGS.md (another release or a bad dump)"; fi
   fi
 fi
-echo "extract: done -> $root/port/assets"
+echo "extract: done -> $root/game"

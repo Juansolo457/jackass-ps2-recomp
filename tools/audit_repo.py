@@ -28,22 +28,22 @@ import sys
 # Folders that only hold game material, data derived from it, builds or local state.
 PROHIBITED_PATHS = [
     (r'(^|/)private/', 'private/ (disc images, traces, captures, test packages)'),
-    (r'^game/', 'game/ (game files)'),
-    (r'^port[^/]*/assets(/|$)', '<port>/assets (the game files)'),
-    (r'^port[^/]*/generated(/|$)', 'generated translation of the game code'),
-    (r'^port[^/]*/(logs|out)(/|$)', 'logs or build output'),
-    (r'^port[^/]*/(user|cache|memcard)[^/]*(/|$)', 'saves, settings or caches'),
+    (r'^game/', 'game/ (the extracted disc)'),
+    (r'^data/', 'data/ (prepared discs, recorded VU1 code, dumped IOP modules, saves)'),
+    (r'^generated(_[^/]*)?/', 'generated translation of the game code'),
+    (r'(^|/)(vu1_capture|iop_modules)/', 'recorded VU1 microcode or dumped IOP modules'),
+    (r'^(build|out)/', 'build output'),
+    (r'^engine/runtime/', 'the runtime checkout (engine/runtime.toml), fetched by tools/setup.sh'),
     (r'^(\.tools|third_party)(/|$)', 'toolchain or upstream checkout'),
-    (r'(^|/)(\.tools|third_party)/', 'toolchain or upstream checkout'),
 ]
 # Game files and binaries, by extension.
 PROHIBITED_EXTENSIONS = {
     '.chd', '.iso', '.cue', '.bin', '.img', '.elf', '.irx', '.pss', '.ipu', '.vag', '.adx',
     '.exe', '.dll', '.so', '.lib', '.a', '.obj', '.o', '.pdb', '.ilk', '.dmp', '.zip', '.7z',
-    '.rar', '.ps2', '.gs',
+    '.rar', '.ps2', '.gs', '.nps', '.fsb', '.state',
 }
 # PS2 executable / game-ID file names (SLUS_216.29 style, SYSTEM.CNF).
-GAME_ID_NAME = re.compile(r'(^|/)(S[LC][UEPKA]S_\d{3}\.\d{2}|SYSTEM\.CNF)$', re.I)
+GAME_ID_NAME = re.compile(r'(^|/)(S[LC][UEPKA]S_\d{3}\.\d{2}|SYSTEM\.CNF|DISK\.MAP)$', re.I)
 # First bytes of executables, archives and game formats.
 SIGNATURES = [
     (b'\x7fELF', 'ELF executable'),
@@ -56,6 +56,8 @@ SIGNATURES = [
     (b'VAGp', 'PS2 VAG audio'),
     (b'MULTI', 'PS2 MULTI audio bank'),
     (b'IOPRP', 'IOP replacement module image'),
+    (b'FSB3', 'FMOD sample bank'),
+    (b'FSB4', 'FMOD sample bank'),
 ]
 MAX_SIZE = 2 * 1024 * 1024
 # PS2Recomp emits one C++ function per MIPS function; the name patterns below are what its
@@ -68,7 +70,7 @@ ISO_PVD = b'\x01CD001'  # at offset 0x8000 of an ISO 9660 image; also checked at
 
 # Reviewed exceptions: (path regex, rule it is exempt from, why).
 EXCEPTIONS = [
-    (r'^tools/patches/.*\.patch$', 'size', "source patches to PS2Recomp, kept so it can be rebuilt"),
+    (r'^engine/patches/.*\.patch$', 'size', "source patches to the runtime checkout, kept so it can be rebuilt"),
 ]
 
 

@@ -1,0 +1,68 @@
+# Game profile: Jackass: The Game (PS2, NTSC-U). Read by tools/profile.py; the pipeline, the disc tools and the docs
+# take their game-specific values from here, nothing game-specific is hard-coded elsewhere. Measured values and
+# their provenance: docs/FINDINGS.md.
+id = "jackass"
+title = "Jackass: The Game"
+status = "planned"             # planned | in-progress | playable
+
+[executable]
+name = "SLUS_216.27"           # the ELF named by SYSTEM.CNF (BOOT2); overrides are registered for this name
+serial = "SLUS-21627"
+crc = "0204033A"               # PCSX2 game CRC (XOR of the ELF's 32-bit words)
+sha256 = "a6b5dd8013264f40a6af85b1461aa34647bb9a1848b7190d29f9426f90913701"
+# The code hash: the section whose SHA-1 the recompiled program depends on. God of War uses `.text`; this
+# Metrowerks-linked ELF has one `main` section holding all code and data, so any disc with another `main` is
+# another build.
+code_section = "main"
+code_sha1 = "caa85c7812765c4fe3025a7fa8db0014ef64105c"
+entry = "0x100008"
+compiler = "MW MIPS C Compiler (2.4.1.01)"   # Metrowerks CodeWarrior, from .comment
+sdk = "3.0.0"                                # IOPRP300.IMG
+
+[runtime]
+# paths in this repository used by the pipeline (relative to the repo root)
+recompiler_template = "recomp/jackass.toml"       # PS2Recomp config with @ELF@, @MAP@, @OUT@ placeholders
+function_map = "recomp/jackass_functions.csv"     # Ghidra export (tools/ghidra_functions.py), Name,Start,End,Size
+sdk_functions = "src/jackass/sdk_functions.inc"   # Sony SDK functions by signature (tools/find_sdk_functions.py)
+host_sources = "src"                              # our port: main, disc check, HLE bindings, hooks
+vu1_capture = "data/vu1_capture"                  # recorded VU1 microcode -> AOT (runtime's vu1_recomp)
+
+[disc]
+# How the game reads its files: not by ISO lookup but through its own LBA table.
+file_table = "DISK.MAP"        # text: count; then "\PATH;1",start_lba,end_lba,sectors,size; per file (CRLF)
+irx_dir = "IRX"                # IOP modules, loaded as cdrom0:\IRX\<name>;1
+irx_modules = ["IOPRP300.IMG", "SIO2MAN.IRX", "PADMAN.IRX", "MCMAN.IRX", "MCSERV.IRX", "LIBSD.IRX", "FMODS.IRX"]
+packs = ["DATA/PS2/PKCMN.ZIP"]            # common pack (deflate, minizip); 37 per-stunt packs under DATA/PS2/STUNTS/
+pack_glob = "DATA/PS2/STUNTS/PK??.ZIP"
+sound_glob = "DATA/PS2/SOUNDS/**/*.FSB"   # FMOD sample banks
+movies_dir = "DATA/PS2/MOVIES"            # 17 .NPS MPEG program streams (PSS), 2.1 GB
+movie_ext = ".NPS"
+# the ELF names movies/<name>.npss (standard) and .npsw (widescreen); the disc holds 8.3 names
+movie_variants = { standard = ".npss", widescreen = ".npsw" }
+text_files = ["data/ps2/database/strings.xml"]   # inside PKCMN.ZIP
+video_modes = ["NTSC", "PAL", "480P"]
+widescreen_option = true
+
+[middleware]
+engine = "Sidhe Mab"            # Mab* classes; game code prefix JA*
+scene_format = "RenderWare 3.7 stream (.rws/.txd/.anm/.uva, chunk version 0x1C020065), own loader"
+scripting = "Lua 5.0.2"         # precompiled .luc chunks, scripts/AutoExec.lua
+physics = "ODE"
+audio = "FMOD (FSOUND) with FMODS.IRX on the IOP, .FSB banks"
+video = "Sony libipu / sceMpeg (.pss)"
+serialization = "XDS!0303 (Mab), XML"
+
+[optimize]
+# scripted run that records the VU1 microcode (and exercises the IRX) the game uses; to write once the game boots.
+# The developers' own input scripts in PKCMN.ZIP data/ps2/scripts/key_sequence/*.txt are the starting point.
+seconds = 240
+pad_script = ""
+
+[[editions]]
+id = "usa"
+kind = "original"
+language = "en"
+label = "English (USA)"
+elf_crc = "0204033A"
+
+# Other releases, not supported: Europe SLES_546.33 (multi-language). Add an edition when its disc is measured.
