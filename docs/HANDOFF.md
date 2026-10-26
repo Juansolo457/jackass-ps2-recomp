@@ -20,10 +20,11 @@ The user's decisions so far:
   libsdl3-dev 3.4.2, p7zip. Run things with `wsl.exe -d Ubuntu -u jj -- bash -c '...'`.
 - The CHD stays in the user's Downloads folder (read-only). The user OK'd reading it and
   extracting it with chdman (2026-10-25).
-- At each stopping point, add/update the project's row on **recomp.fyi** (`.recomp.json` at the
-  repo root is read daily once the repo is public on GitHub; the manifest issue form at
-  github.com/neurocontrarian/recomp-board lists it immediately). Not done yet: the repo is
-  local only, and publishing it needs the user's say-so.
+- The repo is **public** at https://github.com/Juansolo457/jackass-ps2-recomp (published
+  2026-10-26 at the user's request). At each stopping point, update the project's row on
+  **recomp.fyi**: editing `.recomp.json` at the root is enough, the board reads it daily. The
+  row was requested through the manifest form, issue
+  https://github.com/neurocontrarian/recomp-board/issues/263 (2026-10-26).
 
 | Piece | State |
 |---|---|
@@ -55,11 +56,10 @@ The user's decisions so far:
 ## Blockers / needs the user
 1. **PCSX2** for the oracle traces (not installed; its install needs an OK). Needed before
    Layer 1's exit test, not before the analyzer run.
-2. **Publishing the repo on GitHub** (public), which the recomp.fyi row needs.
-3. Every build, codegen or run still needs an OK first.
+2. Every build, codegen or run still needs an OK first.
 
 ## Next steps
-1. Ask the user: publish to GitHub now (then recomp.fyi), and install PCSX2.
+1. Ask the user to install PCSX2 (or OK its install).
 2. `tools/setup.sh` in WSL: pin PS2Recomp, copy its LICENSE into `LICENSES/`, list it in
    NOTICE, read `ps2xRuntime`/`ps2xIOP` to see what exists versus is stubbed. Write the result
    into PLAN.md's open questions.
