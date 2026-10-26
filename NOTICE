@@ -10,17 +10,20 @@ text comes from. Nothing copied is relicensed as MIT.
    tools/audit_repo.py comes from the sibling fear360-recomp and graw360-recomp projects (MIT,
    same author), adapted for PS2 file types.
 
-2. PS2Recomp (https://github.com/ran-j/PS2Recomp)
-   third_party/PS2Recomp (not tracked) is the pinned upstream checkout; tools/patches/*.patch
-   are this project's changes to it and are under PS2Recomp's own license. Its license text
-   and exact terms are recorded in LICENSES/ when the checkout is pinned (tools/setup.sh),
-   before any of its code or scaffolding is tracked here.
+2. GNU GPL version 3 or later (LICENSES/GPL-3.0.txt)
+   - PS2Recomp (https://github.com/ran-j/PS2Recomp) is GPL-3.0. third_party/PS2Recomp (not
+     tracked) is the pinned checkout; tools/patches/*.patch are this project's changes to it and
+     are under the GPL as well.
+   - Waffle565's runtime (https://github.com/Waffle565/God-Of-War-Native-Port, branch `runtime`,
+     a fork of PS2Recomp) and KIexster's patch stack
+     (https://github.com/KIexster/god-of-war-recomp, GPL-3.0), when tools/setup.sh fetches them
+     into third_party/ (not tracked), keep the GPL. Parts of that runtime originate in PCSX2
+     (GPL-3.0+: `ee_ref/`, `vu_pcsx2/`) and in LightVelox's Shadow of the Colossus fork.
+   - port/src/overrides/ (game-function overrides compiled into the runtime) and any file that
+     includes the runtime's headers are GPL-3.0-or-later; their headers say so. The program
+     tools/build.sh produces links all of this and is distributed, if ever, under the GPL v3 or
+     later. Releases stay source only regardless (README, "Legal").
 
-3. God of War native ports (Waffle565/God-Of-War-Native-Port and forks)
-   Studied as the model for the runtime and renderer. The KIexster fork is listed as GPL-3.0.
-   No code from them is in this repository yet; if any is copied, it goes under its own
-   license in a clearly marked directory and is listed here with its upstream commit.
-
-4. Reference material
+3. Reference material
    PCSX2 (GPL-3.0) and the PS2 hardware manuals are consulted, not copied. Any code taken from
-   PCSX2 would make the directory that holds it GPL and must be listed here.
+   PCSX2 directly would go under the GPL in a marked directory and be listed here.

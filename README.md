@@ -22,11 +22,12 @@ forks: [KIexster](https://github.com/KIexster/god-of-war-recomp),
 from our own Xbox 360 recomps, [fear360-recomp](https://github.com/Juansolo457/fear360-recomp)
 and [graw360-recomp](https://github.com/Juansolo457/graw360-recomp).
 
-The runtime is built **bottom up**, one hardware layer at a time, each verified against PCSX2
+The runtime is brought up **bottom up**, one hardware layer at a time, each verified against PCSX2
 before the next is started: memory and ELF loading, the recompiled EE code and kernel syscalls,
-DMA and the VIF/GIF paths, the GS (first a software rasterizer for correctness, then Vulkan), the
-IOP side (CD-ROM, SPU2, pad), and only then the title screen. [docs/PLAN.md](docs/PLAN.md) has
-the layers and their exit criteria.
+DMA and the VIF/GIF paths, VU1, the GS, the IOP side (CD-ROM, FMOD, pad), and only then the title
+screen. Each layer starts from Waffle565's native runtime (as KIexster's repo does) and is patched
+for what Jackass needs, rather than written again. [docs/PLAN.md](docs/PLAN.md) has the layers and
+their exit criteria.
 
 ## Status
 
@@ -73,9 +74,9 @@ private/     your disc images, captures and logs (ignored)
 - No assets, executables, generated code or proprietary code are distributed. Never attach
   builds or game files to a release. Before pushing, run `python3 -I tools/audit_repo.py`
   (CI runs it too).
-- Our own tools, docs and glue: **MIT** ([LICENSE](LICENSE)). Third-party code this repository
-  carries or patches keeps its own terms, listed file by file in [NOTICE](NOTICE), full texts in
-  [LICENSES/](LICENSES/).
+- Our own tools, docs and glue: **MIT** ([LICENSE](LICENSE)). PS2Recomp, Waffle565's runtime and
+  KIexster's patches are **GPL-3.0**, and so are our patches and overrides on them and the program
+  the build produces ([NOTICE](NOTICE), full text in [LICENSES/](LICENSES/)).
 - Jackass is a trademark of MTV Networks / Paramount. Not affiliated with Paramount, Red Mile
   Entertainment, Sidhe or Sony Interactive Entertainment.
 

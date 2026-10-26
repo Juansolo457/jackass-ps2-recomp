@@ -5,8 +5,19 @@
   "type": "recomp",
   "original": {
     "region": "USA",
-    "id": "SLUS-21627"
+    "serial": "SLUS-21627"
   },
+  "links": [
+    {
+      "label": "Project status",
+      "url": "https://github.com/Juansolo457/jackass-ps2-recomp/blob/master/docs/HANDOFF.md"
+    }
+  ],
+  "help": [
+    "Metrowerks-compiled PS2 code: function boundaries for the recompiler",
+    "FMOD IOP module and FSB audio",
+    "Sidhe Mab engine / RenderWare 3.7 stream formats"
+  ],
   "project": "Jackass PS2 Recompiled",
   "status": "planning",
   "targets": ["Linux", "Linux (ARM64)", "Windows"],

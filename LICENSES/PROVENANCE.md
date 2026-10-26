@@ -6,7 +6,7 @@ copied from; `NOTICE` says which files each one covers.
 
 | File | Copied verbatim from | Applies to |
 |---|---|---|
-| (none yet) | | |
+| `GPL-3.0.txt` | `LICENSES/GPL-3.0.txt` of the sibling graw360-recomp (itself `LICENSE` of fear-nx at `acad80d`, from Project8Recomp); the standard GNU GPL v3 text | PS2Recomp, Waffle565's runtime and KIexster's patches (all GPL-3.0), our patches and overrides on them, and the built program |
 
-To add: PS2Recomp's license at the pinned commit (tools/setup.sh records the commit), and the
-GPL-3.0 text if anything from the God of War ports or PCSX2 is ever copied.
+PS2Recomp's own `LICENSE` file at the pinned commit is re-checked by tools/setup.sh; if it ever
+differs from plain GPL-3.0, that text is added here.

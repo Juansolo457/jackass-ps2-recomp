@@ -58,14 +58,27 @@ The user's decisions so far:
    Layer 1's exit test, not before the analyzer run.
 2. Every build, codegen or run still needs an OK first.
 
+## Model repo read (2026-10-26)
+The user pointed at KIexster/god-of-war-recomp. Read in full; the lessons are in
+[REFERENCES.md](REFERENCES.md) and the plan revision at the top of [PLAN.md](PLAN.md). Short
+version: build on **Waffle565's runtime** (GPL-3.0, OpenGL 4.3, native VU1/IOP/sound/movies,
+Linux via KIexster's EGL and GCC patches) and patch it for Jackass, layer by layer with PCSX2
+checks; don't write the hardware again. `tools/setup.sh` now pins PS2Recomp at `c5a9d02` and
+clones KIexster's repo as the patch source. NOTICE and LICENSES carry the GPL.
+
 ## Next steps
 1. Ask the user to install PCSX2 (or OK its install).
-2. `tools/setup.sh` in WSL: pin PS2Recomp, copy its LICENSE into `LICENSES/`, list it in
-   NOTICE, read `ps2xRuntime`/`ps2xIOP` to see what exists versus is stubbed. Write the result
-   into PLAN.md's open questions.
-3. Run `ps2xAnalyzer` on `port/assets/SLUS_216.27` → `port/jackass.toml`; compare its function
-   count with the ~16.6k `jr $ra` sites and a REA/Ghidra disassembly; note Metrowerks idioms it
-   misses.
+2. `tools/setup.sh` in WSL (needs an OK: it clones and builds). Then decide the patch order in
+   `tools/patches/ORDER` from KIexster's `scripts/compilar.ps1` list (`tools/ci/parches.py`
+   prints it), apply the Waffle runtime patch + GCC + EGL patches, and build `ps2x_tests` on
+   Linux the way their CI does (`-DPS2X_BUILD_STUDIO=OFF -march=x86-64-v2`). Record pass/fail.
+3. Function map: KIexster's `config/funcmap.csv` came from Ghidra. For Jackass, produce
+   `port/config/funcmap.csv` (Name,Start,End,Size) from a REA/Ghidra pass over the Metrowerks ELF,
+   plus the Sony library functions by name (the `sce*` strings in FINDINGS.md name the libraries;
+   signatures from the SDK 3.0 `libgraph`, `libdma`, `libpad`, `libmc`, `libcdvd`, `libsif`,
+   `libipu`/`libmpeg`), because the runtime's stubs are bound by `name@address`. Then run
+   `ps2_recomp` with a `recomp.template.toml` modelled on theirs. Compare the count with the
+   ~16.6k `jr $ra` sites.
 4. PCSX2 once installed: boot the ISO, save the title-screen frame and the EE/IOP log to
    `private/reference/`.
 5. Layer 1 (memory map + ELF loader) with its test.

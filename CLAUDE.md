@@ -45,8 +45,14 @@ Native **Linux-first** (x86-64 and ARM64, Windows later) build of the PlayStatio
 - Bottom up: each hardware layer (memory/ELF → EE + kernel → DMA/VIF/GIF → GS → IOP/SPU2/pad)
   gets a test against PCSX2 traces before the layer above it is started (PLAN.md). Don't skip
   ahead to "make the menu show".
-- C++20/23, CMake + clang, SDL3. Renderer: a software GS rasterizer first (correctness,
-  golden-image checks against PCSX2), then Vulkan (the one path that covers Linux, Windows and
-  ARM64). Keep the software path as the fallback and the oracle ([[incremental-over-rewrite]]).
+- C++20, CMake + clang/GCC. Base: PS2Recomp at `c5a9d02` with Waffle565's runtime (via
+  KIexster's patch stack), GPL-3.0: every change to it is a patch in `tools/patches/` with a
+  `// JA-Port:` marker and a regression test; game-function overrides go in `port/src/overrides/`
+  and call the original for anything they don't replace. Renderer: Waffle565's OpenGL 4.3 GS
+  (EGL on Linux) first; Vulkan only if a target lacks GL 4.3 ([[incremental-over-rewrite]]).
+  Never stub Sony's software-double libm; check every stub's calling convention.
+- The model repo is github.com/KIexster/god-of-war-recomp (read 2026-10-26, REFERENCES.md): copy
+  its layout (`config/funcmap.csv`, `recomp.template.toml`, numbered scripts, per-topic patches,
+  CI that validates the config and applies the patches without the game).
 - Findings about the binary go in `docs/FINDINGS.md` with the ELF hash they apply to; state and
   next steps in `docs/HANDOFF.md`, not in chat. Update HANDOFF.md at the end of every session.

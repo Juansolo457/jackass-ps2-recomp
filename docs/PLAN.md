@@ -28,10 +28,41 @@ the EE register state, the GIF packets and the frame at any point, and our layer
 | What we copy | The pipeline and the TOML-first workflow; the renderer split (correctness first, then speed); their list of what broke (overlays, VU1 microprograms, IOP modules) | Repo conventions, scripts, audit, handoff discipline, source-only releases |
 | Where it hurts | Each port is one game's hand-written hardware; little is reusable without reading it | n/a here |
 
-**Decision:** PS2Recomp (ran-j, pinned commit recorded by `tools/setup.sh`), its runtime used as a
-starting point but every hardware layer treated as ours to write and verify. Vulkan is the one
-renderer path that covers Linux, Windows and ARM64, so the native renderer is Vulkan; a software
-GS rasterizer comes first as the oracle and fallback.
+**Decision (2026-10-25):** PS2Recomp (ran-j, pinned commit recorded by `tools/setup.sh`), its
+runtime used as a starting point but every hardware layer treated as ours to write and verify.
+Vulkan is the one renderer path that covers Linux, Windows and ARM64, so the native renderer is
+Vulkan; a software GS rasterizer comes first as the oracle and fallback.
+
+**Revision after reading the God of War repos (2026-10-26, REFERENCES.md):** the user pointed at
+KIexster/god-of-war-recomp as the example. What it shows changes the "write every layer ourselves"
+part, not the bottom-up verification:
+
+- The working runtime is **Waffle565's `runtime` branch** (a GPL-3.0 fork of PS2Recomp at
+  `c5a9d02`, carried by KIexster as `patches/ps2recomp-waffle-runtime.patch`). It already has what
+  Layers 1–7 below describe: native kernel, DMA/VIF/GIF handed straight to VU1 and GS, VU1
+  microcode and IRX modules compiled ahead of time to C++, an OpenGL 4.3 render-target GS with
+  2x internal resolution, native pad/memory card/sound, libmpeg2 movies, files served at their
+  original disc sectors. KIexster builds its test suite on Linux (GCC) and has an EGL patch for
+  the GS, so Linux is a patch away, not a port away.
+- So the layers stay, but each one becomes **"take Waffle565's component, run Jackass through it,
+  verify against PCSX2, patch what Jackass needs"** instead of "write it". This matches the user's
+  preference for measured, incremental work over rewrites ([[incremental-over-rewrite]]). The
+  Vulkan renderer moves to a later phase, only if OpenGL 4.3 fails on a target (ARM64 Linux has
+  GL 4.3 through Mesa on most SoCs; Android would not).
+- **Everything built on that runtime is GPL-3.0.** Our own tools and docs can stay MIT, but the
+  runtime patches, overrides and the built program are GPL (NOTICE). KIexster chose GPL-3.0 for
+  the whole repo for simplicity; our NOTICE keeps the split as graw360-recomp does.
+- Their PCSX2 method is exactly our oracle: replay a frame's VIF1 chain from a savestate through
+  the runtime's VIF1/VU1/GS to split GS bugs from EE bugs (REFERENCES.md, "PCSX2 as oracle").
+- Their hard-won rules: never stub Sony's software-double libm (`sin` returning its argument broke
+  every animation), verify each stub's calling convention, keep the first PSS block for
+  `sceMpegCreate`, one patch per topic with a regression test, overrides call the original for
+  anything not replaced.
+- **Risk for Jackass:** Waffle565's runtime is shaped by God of War (Santa Monica's engine, 989snd
+  audio, GCC-built). Jackass is Metrowerks-built with FMOD on the IOP, ODE, Lua and RenderWare
+  data. The IRX ahead-of-time compiler should cover `FMODS.IRX` the same way it covers GoW's 8
+  modules, which removes the FMOD HLE concern from Layer 6; the Metrowerks function boundaries and
+  the Sony-library stub addresses are the first things to establish (Layer 2).
 
 ## Layers (each with its exit test)
 
@@ -102,10 +133,15 @@ Settled at Layer 0 (2026-10-25, see FINDINGS.md):
 - **Game ID:** `SLUS_216.27`.
 
 Still open:
-- **PS2Recomp's actual state** at the pinned commit (its README says experimental): how much of
-  the kernel and DMA layer exists versus is stubbed, and whether its generated code builds with
-  clang on Linux and ARM64 out of the box. Decide after `tools/setup.sh` and a read of
-  `ps2xRuntime`/`ps2xIOP`.
+- **Which base to pin.** Options: (a) `ran-j/PS2Recomp` at KIexster's `c5a9d02` plus KIexster's
+  patch stack (Waffle565's runtime as a patch, then GCC/EGL/VU fixes: proven to build on Linux);
+  (b) Waffle565's `runtime` branch checked out directly (the upstream of that patch, moving);
+  (c) ran-j's current HEAD (updated October 2026, may have absorbed some of this). Recommended:
+  (a), because its CI proves the Linux build and its patch order is documented
+  (`tools/ci/parches.py`). `tools/setup.sh` defaults to the `c5a9d02` pin; the patch stack is
+  fetched by `tools/setup.sh` from KIexster's repo at a recorded commit (GPL-3.0, NOTICE).
+- **Whether the generated code builds with clang** (KIexster uses MSVC on Windows and GCC on
+  Linux). Check at the first `tools/build.sh`.
 - **Metrowerks output.** The game was built with CodeWarrior MIPS 2.4.1, not GCC. How well does
   `ps2xAnalyzer` find function boundaries and switch tables in it? Check against a REA/Ghidra
   disassembly at Layer 2 before trusting the TOML.

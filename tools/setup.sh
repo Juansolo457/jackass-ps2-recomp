@@ -16,6 +16,15 @@ third=$root/third_party
 pinfile=$third/PS2Recomp.commit
 src=$third/PS2Recomp
 upstream=https://github.com/ran-j/PS2Recomp
+# Default pin: the commit KIexster/god-of-war-recomp builds on (docs/REFERENCES.md); Waffle565's
+# runtime is a patch over it. Override with PS2RECOMP_PIN=<sha> on the first run.
+default_pin=${PS2RECOMP_PIN:-c5a9d02573410a2085a4b4b831b0b68ba3515440}
+# KIexster's patch stack (GPL-3.0): fetched read-only into third_party/god-of-war-recomp for the
+# runtime patch and its Linux fixes. Pinned by third_party/god-of-war-recomp.commit (first run
+# records HEAD).
+gow_repo=https://github.com/KIexster/god-of-war-recomp
+gow=$third/god-of-war-recomp
+gowpin=$third/god-of-war-recomp.commit
 force=0
 [ "${1:-}" = "--force" ] && force=1
 
@@ -46,11 +55,30 @@ if [ -f "$pinfile" ]; then
   git -C "$src" checkout --quiet "$pin"
   git -C "$src" submodule update --init --recursive --quiet
 else
-  pin=$(git -C "$src" rev-parse HEAD)
+  pin=$default_pin
+  git -C "$src" checkout --quiet "$pin"
+  git -C "$src" submodule update --init --recursive --quiet
   printf '%s\n' "$pin" > "$pinfile"
-  echo "setup: pinned PS2Recomp at $pin (third_party/PS2Recomp.commit); copy its LICENSE into LICENSES/ and list it in NOTICE"
+  echo "setup: pinned PS2Recomp at $pin (third_party/PS2Recomp.commit)"
 fi
 echo "setup: PS2Recomp $pin"
+if ! grep -q 'GNU GENERAL PUBLIC LICENSE' "$src/LICENSE" 2>/dev/null; then
+  echo "setup: WARNING: PS2Recomp's LICENSE at $pin is not the GPL text NOTICE expects; check LICENSES/PROVENANCE.md" >&2
+fi
+
+# KIexster's repo, for the Waffle565 runtime patch and the Linux/GCC fixes (read-only reference;
+# which of its patches we apply, and in what order, is decided in tools/patches/ORDER once
+# Layer 1 starts).
+if [ ! -d "$gow/.git" ]; then
+  echo "setup: cloning $gow_repo (reference, GPL-3.0)"
+  git clone --quiet "$gow_repo" "$gow"
+fi
+if [ -f "$gowpin" ]; then
+  git -C "$gow" fetch --quiet origin && git -C "$gow" checkout --quiet "$(tr -d ' \n\r' < "$gowpin")"
+else
+  git -C "$gow" rev-parse HEAD > "$gowpin"
+  echo "setup: pinned god-of-war-recomp at $(cat "$gowpin")"
+fi
 
 # Project patches, in name order; each must apply cleanly to the pin.
 for p in "$root"/tools/patches/*.patch; do
