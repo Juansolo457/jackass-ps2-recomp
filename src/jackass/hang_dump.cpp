@@ -23,6 +23,8 @@
 #include <windows.h>
 #include <dbghelp.h>
 #include <tlhelp32.h>
+#else
+#include <unistd.h>
 #endif
 
 namespace jackass::hangdump
@@ -295,6 +297,17 @@ namespace jackass::hangdump
             std::fflush(stderr);
         }
     }
+#else
+    namespace
+    {
+        // JA-Port: on Linux the native stacks come from gdb (`gdb -p <pid> -batch -ex "thread apply all bt"`);
+        // the guest kernel dump below is the same on every platform.
+        void dumpAllThreads()
+        {
+            std::fprintf(stderr, "[hang-dump] native stacks: attach gdb to pid %d\n", static_cast<int>(getpid()));
+        }
+    }
+#endif
 
     void startFromEnvironment()
     {
@@ -320,7 +333,4 @@ namespace jackass::hangdump
             } while (repeatSeconds > 0);
         }).detach();
     }
-#else
-    void startFromEnvironment() {}
-#endif
 }
