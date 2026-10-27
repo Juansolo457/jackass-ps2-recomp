@@ -1,0 +1,20 @@
+IOP: move the kernel heap base from 0x80000 to 0xC0000, so IRX modules (loaded from 0x10000 up) get 704 KB.
+Why: Jackass loads seven IRX; FMODS.IRX (272 KB) hit "module arena exhausted" after the first five.
+The heap keeps 0xC0000-0x1F0000 (1.2 MB).
+Origin: this project (jackass-ps2-recomp), 2026-10-27.
+
+diff --git a/runtime/ps2xIOP/src/emulator/core/iop_memory.h b/runtime/ps2xIOP/src/emulator/core/iop_memory.h
+index ca818c8..8af29db 100644
+--- a/runtime/ps2xIOP/src/emulator/core/iop_memory.h
++++ b/runtime/ps2xIOP/src/emulator/core/iop_memory.h
+@@ -27,7 +27,9 @@ namespace ps2x::iop::detail
+         static constexpr uint32_t Spu2End = 0x1FA00000u;
+         static constexpr uint32_t SifBase = 0x1D000000u;
+         static constexpr uint32_t SifEnd = 0x1D001000u;
+-        static constexpr uint32_t HeapBase = 0x00080000u;
++        // JA-Port: IRX modules load below HeapBase (from 0x10000). 0x80000 left 448 KB, too little for Jackass's seven
++        // modules (FMODS.IRX alone is 272 KB): 0xC0000 gives them 704 KB and keeps a 1.2 MB heap above.
++        static constexpr uint32_t HeapBase = 0x000C0000u;
+         static constexpr uint32_t HeapLimit = 0x001F0000u;
+ 
+         struct Allocation
