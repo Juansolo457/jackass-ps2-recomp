@@ -1,0 +1,150 @@
+Runtime arena: PS2X_RUNTIME_ARENA=<base>:<limit> keeps the runtime's guest allocations out of the game's heap.
+Why: guestMalloc (SIF command packets, RPC buffers) allocated from the heap the game declares with SetupHeap, which
+Jackass's Metrowerks malloc owns. Once FMOD's IOP-to-EE replies flowed (patch 05) its blocks were overwritten and
+the heap walk (0x102420) looped forever on the main menu. With the arena set, the runtime allocates only there,
+SetupHeap returns the game the heap base it asked for, and EndOfHeap reports the game's heap limit.
+Unset: unchanged. Same idea as the Killzone recomp's runtime arena (its patch 0008).
+Origin: this project (jackass-ps2-recomp), 2026-10-27.
+
+diff --git a/runtime/ps2xRuntime/include/ps2_runtime.h b/runtime/ps2xRuntime/include/ps2_runtime.h
+index 6d94576..566be6a 100644
+--- a/runtime/ps2xRuntime/include/ps2_runtime.h
++++ b/runtime/ps2xRuntime/include/ps2_runtime.h
+@@ -380,6 +380,8 @@ public:
+     void clearLLBit(R5900Context *ctx);
+     void configureGuestHeap(uint32_t guestBase, uint32_t guestLimit = PS2_RAM_SIZE);
+     uint32_t guestMalloc(uint32_t size, uint32_t alignment = 16u);
++    // JA-Port: true when PS2X_RUNTIME_ARENA moved the runtime's allocations out of the game's heap.
++    bool usesRuntimeArena() const;
+     uint32_t guestCalloc(uint32_t count, uint32_t size, uint32_t alignment = 16u);
+     uint32_t guestRealloc(uint32_t guestAddr, uint32_t newSize, uint32_t alignment = 16u);
+     void guestFree(uint32_t guestAddr);
+diff --git a/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp b/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
+index 6705f0c..3e227a5 100644
+--- a/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
++++ b/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
+@@ -470,6 +470,8 @@ namespace ps2_syscalls
+     // Lowest address of the main thread stack set up by SetupThread (0 = unknown). The EE kernel's SetupHeap with
+     // size -1 lets the heap run up to this address.
+     static uint32_t g_mainThreadStackBase = 0u;
++    // JA-Port: the heap limit the game's SetupHeap established (0 = none yet), for EndOfHeap with a runtime arena.
++    static uint32_t g_gameHeapLimit = 0u;
+ 
+     void SetupThread(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+     {
+@@ -617,6 +619,7 @@ namespace ps2_syscalls
+             heapLimit = kDefaultGuestHeapEnd;
+         }
+ 
++        g_gameHeapLimit = heapLimit; // JA-Port: EndOfHeap answers with the game's heap, not the runtime arena
+         if (runtime)
+         {
+             runtime->configureGuestHeap(heapBase, heapLimit);
+@@ -631,7 +634,9 @@ namespace ps2_syscalls
+                           << std::dec << std::endl;
+             });
+ 
+-            setReturnU32(ctx, runtime->guestHeapBase());
++            // JA-Port: with a runtime arena (PS2X_RUNTIME_ARENA) the runtime's allocator is not the game's heap: the
++            // game gets the heap base it asked for, as from the EE kernel.
++            setReturnU32(ctx, runtime->usesRuntimeArena() ? heapBase : runtime->guestHeapBase());
+             return;
+         }
+ 
+@@ -645,9 +650,10 @@ namespace ps2_syscalls
+ 
+         static constexpr uint32_t kDefaultGuestHeapEnd = 0x01F00000u;
+ 
+-        const uint32_t ret = runtime
+-                                 ? runtime->guestHeapLimit()
+-                                 : kDefaultGuestHeapEnd;
++        const uint32_t ret = runtime && runtime->usesRuntimeArena() && g_gameHeapLimit != 0u
++                                 ? g_gameHeapLimit
++                                 : runtime ? runtime->guestHeapLimit()
++                                           : kDefaultGuestHeapEnd;
+ 
+         setReturnU32(ctx, ret);
+     }
+diff --git a/runtime/ps2xRuntime/src/lib/ps2_runtime.cpp b/runtime/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 2f69541..36925a4 100644
+--- a/runtime/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/runtime/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -300,6 +300,43 @@ namespace
+     constexpr uint32_t kGuestHeapSafetyPad = 0x1000u;
+     constexpr uint32_t kGuestHeapHardLimit = 0x01F00000u;
+ 
++    // JA-Port: PS2X_RUNTIME_ARENA=<base>:<limit> (e.g. 0x80000:0x100000): the runtime's own guest allocations
++    // (guestMalloc: SIF command packets, RPC buffers, ...) come from this range only, never from the heap the game
++    // declares with SetupHeap. A game that runs its own malloc over that heap (Jackass's Metrowerks allocator)
++    // otherwise has its blocks overwritten: its heap walk (0x102420) then loops forever on a clobbered block.
++    // The same idea as the Killzone recomp's runtime arena (patch 0008 there). Unset: the old behaviour.
++    struct RuntimeArena
++    {
++        uint32_t base = 0u;
++        uint32_t limit = 0u;
++        explicit operator bool() const { return limit > base; }
++    };
++
++    const RuntimeArena &runtimeArena()
++    {
++        static const RuntimeArena arena = []
++        {
++            RuntimeArena a;
++            const char *value = std::getenv("PS2X_RUNTIME_ARENA");
++            if (!value || !*value)
++                return a;
++            char *end = nullptr;
++            const unsigned long base = std::strtoul(value, &end, 0);
++            if (end && *end == ':')
++            {
++                const unsigned long limit = std::strtoul(end + 1, nullptr, 0);
++                if (limit > base && limit <= PS2_RAM_SIZE)
++                {
++                    a.base = static_cast<uint32_t>(base);
++                    a.limit = static_cast<uint32_t>(limit);
++                    std::fprintf(stderr, "[runtime] guest allocations in the runtime arena 0x%x-0x%x\n", a.base, a.limit);
++                }
++            }
++            return a;
++        }();
++        return arena;
++    }
++
+     constexpr uint32_t COP0_CAUSE_EXCCODE_MASK = 0x0000007Cu;
+     constexpr uint32_t COP0_CAUSE_BD = 0x80000000u;
+     constexpr uint32_t COP0_STATUS_EXL = 0x00000002u;
+@@ -1264,7 +1301,11 @@ bool PS2Runtime::loadELF(const std::string &elfPath)
+     const uint32_t suggestedHeapBase = alignGuestHeapValue(paddedEnd, kGuestHeapDefaultAlignment);
+     {
+         std::lock_guard<std::mutex> lock(m_guestHeapMutex);
+-        if (!m_guestHeapConfigured)
++        if (runtimeArena())
++        {
++            resetGuestHeapLocked(runtimeArena().base, runtimeArena().limit); // JA-Port: the arena from the start
++        }
++        else if (!m_guestHeapConfigured)
+         {
+             const uint32_t hardLimit = std::min(kGuestHeapHardLimit, PS2_RAM_SIZE);
+             m_guestHeapSuggestedBase = std::min(suggestedHeapBase, hardLimit);
+@@ -2229,9 +2270,21 @@ void PS2Runtime::freeGuestBlockLocked(uint32_t guestAddr)
+     coalesceGuestHeapLocked();
+ }
+ 
++bool PS2Runtime::usesRuntimeArena() const
++{
++    return static_cast<bool>(runtimeArena());
++}
++
+ void PS2Runtime::configureGuestHeap(uint32_t guestBase, uint32_t guestLimit)
+ {
+     std::lock_guard<std::mutex> lock(m_guestHeapMutex);
++    if (runtimeArena())
++    {
++        // JA-Port: the game's SetupHeap names the game's heap; the runtime keeps allocating from its arena.
++        if (!m_guestHeapConfigured)
++            resetGuestHeapLocked(runtimeArena().base, runtimeArena().limit);
++        return;
++    }
+     uint32_t normalizedBase = alignGuestHeapValue(clampGuestHeapBase(guestBase), kGuestHeapDefaultAlignment);
+     if (normalizedBase == 0u)
+     {

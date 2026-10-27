@@ -274,6 +274,11 @@ int main(int argc, char *argv[])
     // argv[0] with "cdrom0:" to pick its disc paths (cdrom0:\IRX\%s;1, cdrom0:\DISK.MAP;1); with no argv it takes the
     // development-kit paths under host0:S:\common\ps2\iop\modules\ and loads no module from the disc.
     setDefaultEnv("PS2X_BOOT_ARGV0", std::string("cdrom0:\\") + jackass::kBootElfPath + ";1");
+    // The runtime's own allocations (SIF command packets, RPC buffers) in RAM the game never uses (engine/patches/06):
+    // the game's Metrowerks malloc owns everything from the end of the ELF to the stack, and runtime allocations
+    // there corrupted its heap (the heap walk at 0x102420 looped forever once FMOD's replies flowed). 0x40000-0x80000
+    // holds the runtime's pools, callback stacks and syscall mirror; the ELF starts at 0x100000.
+    setDefaultEnv("PS2X_RUNTIME_ARENA", "0x80000:0x100000");
 
     try
     {
