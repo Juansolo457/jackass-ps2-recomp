@@ -6,8 +6,7 @@ third-party code or scaffolding is tracked or built against, with the upstream c
 
 | File | Copied verbatim from | Applies to |
 |---|---|---|
+| `AC5-Recomp-APACHE-2.0.txt` | `docs/licenses/AC5-Recomp-APACHE-2.0.txt` of the Urban Reign checkout at `20b30fd` | `runtime/ps2xRuntime/src/lib/ipu` in the checkout: the Ace Combat 5 static recompilation's IPU (Apache-2.0) |
 | `GPL-3.0.txt` | `LICENSES/GPL-3.0.txt` of the sibling graw360-recomp (itself `LICENSE` of fear-nx at `acad80d`, from Project8Recomp); the standard GNU GPL v3 text | the Urban Reign port, PS2Recomp, PCSX2 (all GPL-3.0) in the `engine/runtime/` checkout, our patches and host code on them, and the built program |
 
-To add when `tools/setup.sh` has run once: the checkout's `LICENSE` (the same GPL text; `setup.sh` warns if
-it is not) and `docs/licenses/AC5-Recomp-APACHE-2.0.txt` from it, for the IPU code in
-`runtime/ps2xRuntime/src/lib/ipu`.
+The checkout's own `LICENSE` is the GPL v3 text in Markdown form (checked by `tools/setup.sh` on 2026-10-27).

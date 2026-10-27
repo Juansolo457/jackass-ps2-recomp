@@ -53,7 +53,7 @@ if [ "$(git -C "$rt" rev-parse HEAD)" != "$pin" ]; then
 fi
 git -C "$rt" submodule update --init --recursive --quiet 2>/dev/null || true
 echo "setup: engine/runtime at $pin"
-grep -q 'GNU GENERAL PUBLIC LICENSE' "$rt/LICENSE" 2>/dev/null || \
+grep -qi 'GNU General Public License' "$rt/LICENSE" 2>/dev/null || \
   echo "setup: WARNING: the runtime's LICENSE is not the GPL text NOTICE expects; check LICENSES/PROVENANCE.md" >&2
 
 # Our patches, in name order; each must apply cleanly to the pin (git apply skips the header lines).
