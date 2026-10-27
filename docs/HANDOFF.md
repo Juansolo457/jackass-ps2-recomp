@@ -68,6 +68,33 @@ Linux via KIexster's EGL and GCC patches) and patch it for Jackass, layer by lay
 checks; don't write the hardware again. `tools/setup.sh` now pins PS2Recomp at `c5a9d02` and
 clones KIexster's repo as the patch source. NOTICE and LICENSES carry the GPL.
 
+## First build day (2026-10-27)
+The user gave the go-ahead for setup, the function map, the recompile and a first boot (each new build or test
+window announced first). Done, in order, all in WSL:
+- Dev packages (X11/GL headers, libvulkan-dev, libshaderc-dev, libpng, ALSA), OpenJDK 21, **Ghidra 12.1.4 +
+  ghidra-emotionengine-reloaded v2.1.38** in `~/tools/ghidra_12.1.4_PUBLIC` (WSL home).
+- `tools/setup.sh`: the Urban Reign checkout at `20b30fd`, **configured and built from our CMakeLists.txt with no
+  patches needed**: `build/linux/runtime/ps2xRecomp/ps2_recomp` and `build/linux/bin/libpcsx2gs.so` (+ `resources/`,
+  `shadercache_pcsx2/`). Its LICENSE is the GPL in Markdown (setup's check is case-insensitive now).
+- Function map: headless Ghidra import + auto-analysis (~15 min), export with PS2Recomp's `ExportPS2Functions.java`,
+  filtered by `tools/ghidra_functions.py` → **13,768 functions** in `recomp/jackass_functions.csv`.
+- SDK names: upstream `ran-j/PS2Recomp` `e563698` cloned to `third_party/PS2Recomp-upstream` (ignored), its
+  `ps2_analyzer` built in `build/analyzer` (recompiler lib + analyzer only), run by `tools/sdk_functions.py` → **863
+  names** in `src/jackass/sdk_functions.inc` (206 with runtime handlers, 601 other SDK, 56 Ghidra-named syscall
+  wrappers). REA's MIPS support needs Ghidra too, so Ghidra was the one route.
+- First `tools/generate.sh`: 15,261 functions recompiled (Ghidra's 13,768 + 1,493 of the recompiler's own), 15,264
+  files. 28k "unhandled instruction" reports, all in 932 scan-invented functions inside the data region
+  `0x5A0000`–`0x6A0000` → `recomp/jackass.toml` `skip` list (`tools/recomp_skip.py` rebuilds it); second generate run
+  in progress at the time of writing.
+- `src/`: `main.cpp` (trimmed from Urban Reign's), `src/jackass/{log,sha256,function_hooks,game_disc,hle_bindings}`
+  copied from the Urban Reign port with Jackass constants, `src/CMakeLists.txt`; `tools/build.sh`, `tools/launch.sh`
+  (`--seconds N` smoke runs, `--software-gs`), not yet run.
+- The runtime reads the game **from the ISO** (`PS2CdImage`), not from `game/`: `private/jackass.iso` is what the
+  program mounts; `game/` is for analysis.
+
+Next in this session: build the game (`tools/build.sh`), then a first `tools/launch.sh --seconds 60` with the
+software GS and with `libpcsx2gs.so`, logs in `private/logs/`.
+
 ## Route B chosen and the repo reshaped (2026-10-26)
 The user chose **Route B**: the Urban Reign PC port's runtime (PS2Recomp + PCSX2 GS on Vulkan, IRX
 interpreted), with Vnnc1's repository shape. Done the same day, nothing built:
