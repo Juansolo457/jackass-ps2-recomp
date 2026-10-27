@@ -1,0 +1,365 @@
+EE-to-IOP SIF commands: the EE sceSifSendCmd delivers the packet to the IOP module's handler.
+Why: the IOP sifcmd services sceSifAddCmdHandler/RemoveCmdHandler/SetCmdBuffer/SetSysCmdBuffer were no-ops and
+the EE sceSifSendCmd only returned success (reading args 5/6 from the stack instead of t0/t1 and copying the
+extra data within EE RAM). FMOD.IRX's EE<->IOP command channel never answered: Jackass waited forever on its
+reply semaphore (0x2FE840) under the loading bar. Now: the IOP handlers are recorded (with the module gp), the
+EE call DMAs the extra data into IOP RAM, fills the SIF header and runs handler(packet, data) on the emulated
+IOP after catching it up to EE time, the same path EE-to-IOP RPC takes.
+Origin: this project (jackass-ps2-recomp), 2026-10-27.
+
+diff --git a/runtime/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/runtime/ps2xIOP/include/ps2x/iop/iop_subsystem.h
+index 253d9d7..7a88b34 100644
+--- a/runtime/ps2xIOP/include/ps2x/iop/iop_subsystem.h
++++ b/runtime/ps2xIOP/include/ps2x/iop/iop_subsystem.h
+@@ -32,6 +32,8 @@ namespace ps2x::iop
+         [[nodiscard]] RpcAbi selectRpcAbi(const RpcAbiRequest &request) const;
+         [[nodiscard]] bool canBindRpc(uint32_t sid) const noexcept;
+         [[nodiscard]] RpcResult handleRpc(const RpcRequest &request);
++        // JA-Port: deliver an EE-to-IOP SIF command (EE sceSifSendCmd) to the IOP module that registered its cid.
++        [[nodiscard]] bool handleSifCommand(uint32_t cid, const void *packet, size_t packetSize);
+         void onSifTransfer(const SifTransfer &transfer);
+ 
+         // Physical IOP RAM access shared by the emulator, SIF DMA, and HLE services. Addresses are IOP addresses.
+diff --git a/runtime/ps2xIOP/src/emulator/iop_emulator.cpp b/runtime/ps2xIOP/src/emulator/iop_emulator.cpp
+index 11971cc..cbde53f 100644
+--- a/runtime/ps2xIOP/src/emulator/iop_emulator.cpp
++++ b/runtime/ps2xIOP/src/emulator/iop_emulator.cpp
+@@ -1288,6 +1288,11 @@ namespace ps2x::iop::detail
+         return m_impl->rpc.handleRpc(request, *m_impl);
+     }
+ 
++    bool IopEmulator::handleSifCommand(uint32_t cid, const void *packet, size_t packetSize)
++    {
++        return m_impl->rpc.handleSifCommand(cid, packet, packetSize, *m_impl);
++    }
++
+     bool IopEmulator::hasPendingRpc() const noexcept
+     {
+         return !m_impl->pendingServerCalls.empty();
+diff --git a/runtime/ps2xIOP/src/emulator/iop_emulator.h b/runtime/ps2xIOP/src/emulator/iop_emulator.h
+index 1fdbd56..6c85861 100644
+--- a/runtime/ps2xIOP/src/emulator/iop_emulator.h
++++ b/runtime/ps2xIOP/src/emulator/iop_emulator.h
+@@ -28,6 +28,8 @@ namespace ps2x::iop::detail
+         void runEeCycles(uint64_t eeCycles) noexcept;
+         [[nodiscard]] uint64_t eeCyclesUntilBatch() const noexcept;
+         [[nodiscard]] RpcResult handleRpc(const RpcRequest &request);
++        // JA-Port: an EE-to-IOP SIF command; false when no IOP module registered a handler for cid.
++        [[nodiscard]] bool handleSifCommand(uint32_t cid, const void *packet, size_t packetSize);
+         [[nodiscard]] bool hasRpcServer(uint32_t sid) const noexcept;
+         [[nodiscard]] bool hasPendingRpc() const noexcept;
+         void onSifTransfer(const SifTransfer &transfer);
+diff --git a/runtime/ps2xIOP/src/emulator/services/iop_rpc.cpp b/runtime/ps2xIOP/src/emulator/services/iop_rpc.cpp
+index b5e66e3..36fb43e 100644
+--- a/runtime/ps2xIOP/src/emulator/services/iop_rpc.cpp
++++ b/runtime/ps2xIOP/src/emulator/services/iop_rpc.cpp
+@@ -29,6 +29,10 @@ namespace ps2x::iop::detail
+     void IopRpcBridge::reset()
+     {
+         m_servers.clear();
++        m_cmdHandlers.clear();
++        m_cmdBuffer = 0u;
++        m_sysCmdBuffer = 0u;
++        m_cmdPacketScratch = 0u;
+         m_nextDmaId = 1u;
+         m_sifInitialized = false;
+         m_dmaCallback.reset();
+@@ -156,6 +160,24 @@ namespace ps2x::iop::detail
+         }
+     }
+ 
++    bool IopRpcBridge::handleSifCommand(uint32_t cid, const void *packet, size_t packetSize, IopGuestExecutor &executor)
++    {
++        constexpr size_t kMaxPacketSize = 128u;
++        const auto handler = m_cmdHandlers.find(cid);
++        if (handler == m_cmdHandlers.end() || handler->second.function == 0u || !packet || packetSize < 16u ||
++            packetSize > kMaxPacketSize)
++            return false;
++        // The real sifcmd copies the packet into its receive buffer and calls the handler from the SIF interrupt with
++        // a pointer to it. One scratch packet buffer is enough: handlers run to completion one at a time here.
++        if (m_cmdPacketScratch == 0u)
++            m_cmdPacketScratch = m_memory.allocate(static_cast<uint32_t>(kMaxPacketSize), 16u);
++        if (m_cmdPacketScratch == 0u || !m_memory.writeRam(m_cmdPacketScratch, packet, packetSize))
++            return false;
++        (void)executor.executeGuestFunction(handler->second.function, m_cmdPacketScratch, handler->second.data, 0u, 0u,
++                                            handler->second.gp);
++        return true;
++    }
++
+     bool IopRpcBridge::dispatchSifCmdImport(uint16_t ordinal, IopCpuState &cpu)
+     {
+         const auto setV0 = [&](uint32_t value)
+@@ -164,14 +186,36 @@ namespace ps2x::iop::detail
+         };
+         switch (ordinal)
+         {
+-        case 4: // InitCmd
+-        case 5:
+-        case 6:
+-        case 7:
++        // JA-Port: sifcmd's command-handler services, as the IOP sifcmd module exports them (PS2SDK numbering):
++        // 8 sceSifSetCmdBuffer(buf, count) and 9 sceSifSetSysCmdBuffer(buf, count) return the previous buffer;
++        // 10 sceSifAddCmdHandler(cid, handler, data); 11 sceSifRemoveCmdHandler(cid). They were no-ops, so an IOP
++        // module's command handler (FMOD.IRX's EE<->IOP channel) was never known and EE commands went nowhere.
+         case 8:
++        {
++            const uint32_t previous = m_cmdBuffer;
++            m_cmdBuffer = cpu.gpr[4];
++            setV0(previous);
++            return true;
++        }
+         case 9:
++        {
++            const uint32_t previous = m_sysCmdBuffer;
++            m_sysCmdBuffer = cpu.gpr[4];
++            setV0(previous);
++            return true;
++        }
+         case 10:
++            m_cmdHandlers[cpu.gpr[4]] = CmdHandler{cpu.gpr[5], cpu.gpr[6], cpu.gpr[28]};
++            setV0(0);
++            return true;
+         case 11:
++            m_cmdHandlers.erase(cpu.gpr[4]);
++            setV0(0);
++            return true;
++        case 4: // InitCmd
++        case 5:
++        case 6:
++        case 7:
+         case 14: // InitRpc
+         case 15:
+         case 16:
+diff --git a/runtime/ps2xIOP/src/emulator/services/iop_rpc.h b/runtime/ps2xIOP/src/emulator/services/iop_rpc.h
+index b8e54e8..998c633 100644
+--- a/runtime/ps2xIOP/src/emulator/services/iop_rpc.h
++++ b/runtime/ps2xIOP/src/emulator/services/iop_rpc.h
+@@ -103,6 +103,9 @@ namespace ps2x::iop::detail
+         [[nodiscard]] bool dispatchSifManImport(uint16_t ordinal, IopCpuState &cpu);
+         [[nodiscard]] bool dispatchSifCmdImport(uint16_t ordinal, IopCpuState &cpu);
+         [[nodiscard]] RpcResult handleRpc(const RpcRequest &request, IopGuestExecutor &executor);
++        // JA-Port: an EE-to-IOP SIF command (EE sceSifSendCmd): runs the IOP module's handler registered with the
++        // IOP sceSifAddCmdHandler for this cid, as handler(packet, data). Returns false when no handler is registered.
++        [[nodiscard]] bool handleSifCommand(uint32_t cid, const void *packet, size_t packetSize, IopGuestExecutor &executor);
+         void onSifTransfer(const SifTransfer &transfer);
+         void removeServersInRange(uint32_t base, uint32_t size);
+ 
+@@ -131,10 +134,22 @@ namespace ps2x::iop::detail
+             uint32_t queue = 0;
+         };
+ 
++        // JA-Port: IOP SIF command handlers (sceSifAddCmdHandler) and the command buffers the module set.
++        struct CmdHandler
++        {
++            uint32_t function = 0;
++            uint32_t data = 0;
++            uint32_t gp = 0;
++        };
++
+         IopHost &m_host;
+         IopMemory &m_memory;
+         IopKernel &m_kernel;
+         std::unordered_map<uint32_t, RpcServer> m_servers;
++        std::unordered_map<uint32_t, CmdHandler> m_cmdHandlers;
++        uint32_t m_cmdBuffer = 0u;
++        uint32_t m_sysCmdBuffer = 0u;
++        uint32_t m_cmdPacketScratch = 0u;
+         uint32_t m_nextDmaId = 1u;
+         std::optional<DmaCallback> m_dmaCallback;
+         bool m_sifInitialized = false;
+diff --git a/runtime/ps2xIOP/src/iop_subsystem.cpp b/runtime/ps2xIOP/src/iop_subsystem.cpp
+index 67179b0..c0511a9 100644
+--- a/runtime/ps2xIOP/src/iop_subsystem.cpp
++++ b/runtime/ps2xIOP/src/iop_subsystem.cpp
+@@ -719,6 +719,13 @@ namespace ps2x::iop
+         return hle->handleRpc(request);
+     }
+ 
++    bool IopSubsystem::handleSifCommand(uint32_t cid, const void *packet, size_t packetSize)
++    {
++        // As handleRpc: catch the IOP up to the EE's time first, then run the handler on the emulated IOP.
++        m_impl->flushEeCycles();
++        return m_impl->emulator.handleSifCommand(cid, packet, packetSize);
++    }
++
+     void IopSubsystem::onSifTransfer(const SifTransfer &transfer)
+     {
+         m_impl->flushEeCycles();
+diff --git a/runtime/ps2xRuntime/include/ps2_runtime.h b/runtime/ps2xRuntime/include/ps2_runtime.h
+index 1b00e1c..6d94576 100644
+--- a/runtime/ps2xRuntime/include/ps2_runtime.h
++++ b/runtime/ps2xRuntime/include/ps2_runtime.h
+@@ -299,6 +299,8 @@ public:
+     bool freeIopMemory(uint32_t address);
+     bool readIopMemory(uint32_t address, void *destination, size_t size) const;
+     bool writeIopMemory(uint32_t address, const void *source, size_t size);
++    // JA-Port: an EE-to-IOP SIF command (packet already in host memory, header filled); false if no IOP handler.
++    bool sendIopSifCommand(uint8_t *rdram, R5900Context *ctx, uint32_t cid, const void *packet, size_t packetSize);
+     bool zeroIopMemory(uint32_t address, size_t size);
+     bool isIopMemoryRange(uint32_t address, size_t size) const;
+ 
+diff --git a/runtime/ps2xRuntime/src/lib/Kernel/Stubs/SIF.cpp b/runtime/ps2xRuntime/src/lib/Kernel/Stubs/SIF.cpp
+index 0578e87..744667e 100644
+--- a/runtime/ps2xRuntime/src/lib/Kernel/Stubs/SIF.cpp
++++ b/runtime/ps2xRuntime/src/lib/Kernel/Stubs/SIF.cpp
+@@ -23,33 +23,10 @@ namespace ps2_stubs
+         ps2_syscalls::SifLoadModule(rdram, ctx, runtime);
+     }
+ 
++    // JA-Port: one implementation (Syscalls/RPC.cpp) that also delivers the packet to the IOP handler.
+     void sceSifSendCmd(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+     {
+-        const uint32_t srcAddr = getRegU32(ctx, 7); // $a3
+-        const uint32_t dstAddr = readStackU32(rdram, ctx, 16);
+-        const uint32_t size = readStackU32(rdram, ctx, 20);
+-        if (size != 0u && srcAddr != 0u && dstAddr != 0u)
+-        {
+-            std::vector<uint8_t> payload(size);
+-            bool valid = runtime != nullptr;
+-            for (uint32_t i = 0; i < size; ++i)
+-            {
+-                const uint8_t *src = getConstMemPtr(rdram, srcAddr + i);
+-                if (!src)
+-                {
+-                    valid = false;
+-                    break;
+-                }
+-                payload[i] = *src;
+-            }
+-            if (!valid || !runtime->writeIopMemory(dstAddr, payload.data(), payload.size()))
+-            {
+-                setReturnS32(ctx, 0);
+-                return;
+-            }
+-        }
+-
+-        setReturnS32(ctx, 1);
++        ps2_syscalls::sceSifSendCmd(rdram, ctx, runtime);
+     }
+ 
+     namespace
+diff --git a/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/RPC.cpp b/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/RPC.cpp
+index 52e80da..71afd67 100644
+--- a/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/RPC.cpp
++++ b/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/RPC.cpp
+@@ -1,3 +1,4 @@
++#include <array>  // JA-Port: sceSifSendCmd packet
+ #include <mutex>
+ #include <atomic>
+ #include <unordered_map>
+@@ -1048,36 +1049,79 @@ namespace ps2_syscalls
+         SifCallRpc(rdram, ctx, runtime);
+     }
+ 
++    // JA-Port: sceSifSendCmd(cid, packet, packet_size, src_extra, dest_extra, size_extra) delivers the packet to the
++    // IOP module that registered cid with the IOP sceSifAddCmdHandler, after DMAing size_extra bytes from EE
++    // src_extra to IOP dest_extra. The EE ABI passes arguments 5 and 6 in t0/t1 (the old code read the stack and
++    // copied the extra data within EE RAM), and nothing reached the IOP, so FMOD's EE<->IOP channel never answered.
+     void sceSifSendCmd(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+     {
+-        uint32_t cid = getRegU32(ctx, 4);
+-        uint32_t packetAddr = getRegU32(ctx, 5);
+-        uint32_t packetSize = getRegU32(ctx, 6);
+-        uint32_t srcExtra = getRegU32(ctx, 7);
+-
+-        uint32_t sp = getRegU32(ctx, 29);
+-        uint32_t destExtra = 0;
+-        uint32_t sizeExtra = 0;
+-        readStackU32(rdram, sp, 0x10, destExtra);
+-        readStackU32(rdram, sp, 0x14, sizeExtra);
++        const uint32_t cid = getRegU32(ctx, 4);
++        const uint32_t packetAddr = getRegU32(ctx, 5);
++        const uint32_t packetSize = getRegU32(ctx, 6);
++        const uint32_t srcExtra = getRegU32(ctx, 7);
++        const uint32_t destExtra = getRegU32(ctx, 8);
++        const uint32_t sizeExtra = getRegU32(ctx, 9);
++
++        if (runtime && sizeExtra > 0u && srcExtra != 0u && destExtra != 0u)
++        {
++            std::vector<uint8_t> extra(sizeExtra);
++            bool readable = true;
++            for (uint32_t i = 0; i < sizeExtra; ++i)
++            {
++                const uint8_t *src = getConstMemPtr(rdram, srcExtra + i);
++                if (!src)
++                {
++                    readable = false;
++                    break;
++                }
++                extra[i] = *src;
++            }
++            if (!readable || !runtime->writeIopMemory(destExtra, extra.data(), extra.size()))
++            {
++                setReturnS32(ctx, 0);
++                return;
++            }
++        }
+ 
+-        if (sizeExtra > 0 && srcExtra && destExtra)
++        bool delivered = false;
++        constexpr uint32_t kMaxPacketSize = 112u;
++        if (runtime && packetAddr != 0u && packetSize >= 16u && packetSize <= kMaxPacketSize)
+         {
+-            rpcCopyToRdram(rdram, destExtra, srcExtra, sizeExtra);
++            std::array<uint8_t, kMaxPacketSize> packet{};
++            bool readable = true;
++            for (uint32_t i = 0; i < packetSize; ++i)
++            {
++                const uint8_t *src = getConstMemPtr(rdram, packetAddr + i);
++                if (!src)
++                {
++                    readable = false;
++                    break;
++                }
++                packet[i] = *src;
++            }
++            if (readable)
++            {
++                // The SIF command header, as sifcmd fills it: {psize | dsize << 8, dest, cid, opt}.
++                const uint32_t sizeWord = (packetSize & 0xFFu) | (sizeExtra << 8u);
++                std::memcpy(packet.data() + 0u, &sizeWord, sizeof(sizeWord));
++                std::memcpy(packet.data() + 4u, &destExtra, sizeof(destExtra));
++                std::memcpy(packet.data() + 8u, &cid, sizeof(cid));
++                delivered = runtime->sendIopSifCommand(rdram, ctx, cid, packet.data(), packetSize);
++            }
+         }
+ 
+         static int logCount = 0;
+-        if (logCount < 5)
++        if (logCount < 8)
+         {
+-            RUNTIME_LOG("[sceSifSendCmd] cid=0x" << std::hex << cid
+-                                                 << " packet=0x" << packetAddr
+-                                                 << " psize=0x" << packetSize
+-                                                 << " extra=0x" << destExtra << std::dec << std::endl);
++            RUNTIME_LOG("[sceSifSendCmd] cid=0x" << std::hex << cid << " packet=0x" << packetAddr << " psize=0x" << packetSize
++                                                 << " extra=0x" << sizeExtra << "@0x" << destExtra << std::dec
++                                                 << (delivered ? " delivered to the IOP handler" : " (no IOP handler)") << std::endl);
+             ++logCount;
+         }
+ 
+-        // Return non-zero on success.
+-        setReturnS32(ctx, 1);
++        // Returns a nonzero DMA id on success.
++        static uint32_t nextId = 1u;
++        setReturnS32(ctx, static_cast<int32_t>(nextId++ & 0x7FFFFFFFu) | 1);
+     }
+ 
+     void sceRpcGetPacket(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+diff --git a/runtime/ps2xRuntime/src/lib/ps2_runtime.cpp b/runtime/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 1d27c2d..2f69541 100644
+--- a/runtime/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/runtime/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -864,6 +864,12 @@ ps2x::iop::RpcResult PS2Runtime::handleIopRpc(uint8_t *rdram, R5900Context *ctx,
+     return m_iopSubsystem->handleRpc(request);
+ }
+ 
++bool PS2Runtime::sendIopSifCommand(uint8_t *rdram, R5900Context *ctx, uint32_t cid, const void *packet, size_t packetSize)
++{
++    auto scope = m_iopHost->enterCall(ctx, rdram);
++    return m_iopSubsystem->handleSifCommand(cid, packet, packetSize);
++}
++
+ void PS2Runtime::notifyIopSifTransfer(uint8_t *rdram, const ps2x::iop::SifTransfer &transfer)
+ {
+     auto scope = m_iopHost->enterCall(nullptr, rdram);
