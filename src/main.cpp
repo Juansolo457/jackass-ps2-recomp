@@ -264,6 +264,10 @@ int main(int argc, char *argv[])
     setDefaultEnv("PS2X_SIO2_RECV1", "2");
     // The finished image stays on the GPU (no RAM round trip per frame).
     setDefaultEnv("PS2X_GS_DIRECT_PRESENT", "1");
+    // Boot as a retail console does: argv[0] = "cdrom0:\SLUS_216.27;1" (engine/patches/01). main (0x223590) compares
+    // argv[0] with "cdrom0:" to pick its disc paths (cdrom0:\IRX\%s;1, cdrom0:\DISK.MAP;1); with no argv it takes the
+    // development-kit paths under host0:S:\common\ps2\iop\modules\ and loads no module from the disc.
+    setDefaultEnv("PS2X_BOOT_ARGV0", std::string("cdrom0:\\") + jackass::kBootElfPath + ";1");
 
     try
     {

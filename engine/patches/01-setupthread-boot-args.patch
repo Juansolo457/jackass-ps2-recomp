@@ -1,0 +1,76 @@
+SetupThread: fill crt0's args block (argc, argv[0] = the boot path) when PS2X_BOOT_ARGV0 is set.
+Why: Jackass's main compares argv[0] with "cdrom0:" (and accepts -cd) to choose its disc paths
+(cdrom0:\IRX\%s;1) over its development-kit paths (host0:S:\common\ps2\iop\modules\%s). The runtime never
+filled the block, so argv[0] was null and the game took the host0: paths. Opt-in, because God of War takes
+another IRX path with argv filled (Vnnc1/gow-native-pc AGENTS.md). PS2X_BOOT_ARGS adds more arguments.
+Origin: this project (jackass-ps2-recomp), 2026-10-27.
+
+diff --git a/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp b/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
+index ecf6abd..6705f0c 100644
+--- a/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
++++ b/runtime/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
+@@ -2,6 +2,10 @@
+ #include "runtime/ee_scheduler.h"
+ #include "System.h"
+ 
++#include <cstdlib>  // JA-Port: getenv (SetupThread boot args)
++#include <string>
++#include <vector>
++
+ namespace ps2_syscalls
+ {
+     void GsSetCrt(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+@@ -529,6 +533,53 @@ namespace ps2_syscalls
+ 
+         scheduler.setupCurrentThread(initialStack, stackSize, getRegU32(ctx, 28));
+         g_mainThreadStackBase = (stack == 0xFFFFFFFFu) ? (stackSize != 0u ? sp - stackSize : 0u) : initialStack;
++
++        // JA-Port: the EE kernel fills crt0's args block ($a3: int argc; char *argv[16]; char payload[256]) with
++        // the boot path before main runs. Games read argv[0] to tell a disc boot ("cdrom0:\SLUS_xxx.xx;1") from a
++        // development kit boot (host0:). Opt-in: PS2X_BOOT_ARGV0=<argv[0]> fills the block; without it the block is
++        // left as the runtime always left it (God of War, for one, takes a different IRX path when argv is filled).
++        // Further arguments: PS2X_BOOT_ARGS="-a -b" (space-separated), appended after argv[0].
++        if (const char *argv0 = std::getenv("PS2X_BOOT_ARGV0"); argv0 && *argv0)
++        {
++            const uint32_t argsAddr = getRegU32(ctx, 7);
++            constexpr uint32_t kMaxArgs = 16u;
++            constexpr uint32_t kPayloadOffset = 4u + kMaxArgs * 4u;
++            constexpr uint32_t kPayloadSize = 256u;
++            std::vector<std::string> args{argv0};
++            if (const char *extra = std::getenv("PS2X_BOOT_ARGS"); extra && *extra)
++            {
++                std::string list(extra);
++                size_t pos = 0;
++                while (pos < list.size())
++                {
++                    const size_t space = list.find(' ', pos);
++                    const std::string token = list.substr(pos, space == std::string::npos ? std::string::npos : space - pos);
++                    if (!token.empty())
++                        args.push_back(token);
++                    pos = space == std::string::npos ? list.size() : space + 1;
++                }
++            }
++            if (argsAddr != 0u && getMemPtr(rdram, argsAddr) && getMemPtr(rdram, argsAddr + kPayloadOffset + kPayloadSize - 1u))
++            {
++                uint32_t argc = 0u;
++                uint32_t cursor = argsAddr + kPayloadOffset;
++                const uint32_t payloadEnd = cursor + kPayloadSize;
++                for (const std::string &arg : args)
++                {
++                    if (argc == kMaxArgs || cursor + arg.size() + 1u > payloadEnd)
++                        break;
++                    writeGuestKernelWord(rdram, argsAddr + 4u + argc * 4u, cursor);
++                    for (size_t i = 0; i < arg.size(); ++i)
++                        *getMemPtr(rdram, cursor + static_cast<uint32_t>(i)) = static_cast<uint8_t>(arg[i]);
++                    *getMemPtr(rdram, cursor + static_cast<uint32_t>(arg.size())) = 0u;
++                    cursor += static_cast<uint32_t>(arg.size()) + 1u;
++                    ++argc;
++                }
++                writeGuestKernelWord(rdram, argsAddr, argc);
++                std::cerr << "[SetupThread] args at 0x" << std::hex << argsAddr << std::dec << ": argc=" << argc
++                          << " argv[0]=\"" << args[0] << "\"" << std::endl;
++            }
++        }
+         setReturnU32(ctx, sp);
+     }
+ 

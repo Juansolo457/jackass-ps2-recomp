@@ -95,14 +95,65 @@ def main():
             target = word_at(address)
             if target and in_code(target) and target not in ghidra_starts:
                 extra[target] = 'ctor'
+    # Pointer targets, by what they point at:
+    #   prologue: `addiu sp, sp, -N`;
+    #   thunk:    `j target` followed by `addiu a0, a0, imm` (Metrowerks this-adjusting thunks in vtables);
+    #   empty:    `jr ra` (empty virtual methods);
+    #   vtable:   any code pointer stored next to (±4 bytes) a pointer already accepted, repeated to a fixed point.
+    # A jump table's entries point inside one function, so they match none of the first three, and a run of them is
+    # never next to an accepted function pointer unless the table itself follows a vtable (not seen in this game).
+    data_ranges = [(int(a, 0), int(b, 0)) for a, b in [code.get('data_range', ['0', '0'])]]
+    image = []  # (address, value) of every aligned word of every loaded segment
     for _, offset, vaddr, _, filesz, _ in segments:
         for i in range(0, filesz - 3, 4):
-            target = struct.unpack_from('<I', elf, offset + i)[0]
-            if target & 3 or target in ghidra_starts or target in extra or not in_code(target):
+            image.append((vaddr + i, struct.unpack_from('<I', elf, offset + i)[0]))
+    value_at = dict(image)
+
+    def shape(target):
+        first, second = word_at(target), word_at(target + 4)
+        if first is None:
+            return None
+        if (first >> 16) == 0x27BD and first & 0x8000:
+            return 'pointer'
+        if (first >> 26) == 0x02 and second is not None and (second >> 16) == 0x2484:
+            return 'thunk'
+        if first == 0x03E00008:
+            return 'empty'
+        return None
+
+    accepted_slots = set()
+    for address, target in image:
+        if target & 3 or not in_code(target):
+            continue
+        if target in ghidra_starts or target in extra:
+            accepted_slots.add(address)
+            continue
+        kind = shape(target)
+        if kind:
+            extra[target] = kind
+            accepted_slots.add(address)
+    changed = True
+    while changed:
+        changed = False
+        for address, target in image:
+            if address in accepted_slots or target & 3 or not in_code(target):
                 continue
-            first = word_at(target)
-            if first is not None and (first >> 16) == 0x27BD and first & 0x8000:
-                extra[target] = 'pointer'
+            if any(lo <= target < hi for lo, hi in data_ranges):
+                continue
+            if (address - 4) in accepted_slots or (address + 4) in accepted_slots:
+                if target not in ghidra_starts and target not in extra:
+                    extra[target] = 'vtable'
+                accepted_slots.add(address)
+                changed = True
+    # Every pointer-reached start must sit on a function boundary: after padding (a zero word), or after a return or
+    # an unconditional jump and its delay slot. This drops matches inside a function, e.g. an epilogue's
+    # `jr ra; addiu sp, sp, N` that the empty-method shape would otherwise take (33 such in this game).
+    def at_boundary(target):
+        before1, before2 = word_at(target - 4), word_at(target - 8)
+        return before1 == 0 or before2 == 0x03E00008 or (before2 is not None and (before2 >> 26) == 0x02)
+    rejected = sorted(t for t, kind in extra.items() if kind != 'ctor' and not at_boundary(t))
+    for t in rejected:
+        del extra[t]
     starts = sorted(ghidra_starts | set(extra))
     kept, dropped, labels = [rows[0]], [], 0
     for start in sorted(extra):
@@ -130,10 +181,10 @@ def main():
     kept[1:] = sorted(kept[1:], key=lambda r: int(r[1], 16))
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
     csv.writer(open(out_csv, 'w', newline=''), lineterminator='\n').writerows(kept)
-    kinds = {k: sum(1 for v in extra.values() if v == k) for k in ('ctor', 'pointer')}
+    kinds = {k: sum(1 for v in extra.values() if v == k) for k in ('ctor', 'pointer', 'thunk', 'empty', 'vtable')}
     print(f'{os.path.relpath(out_csv, ROOT)}: {len(kept) - 1} functions ({len(ghidra_starts)} Ghidra, '
-          f'{kinds["ctor"]} constructor-table, {kinds["pointer"]} pointer-reached); {labels} labels skipped; '
-          f'dropped {dropped}')
+          f'pointer-reached {kinds}); {len(rejected)} pointer targets inside functions rejected; '
+          f'{labels} labels skipped; dropped {dropped}')
 
 
 if __name__ == '__main__':

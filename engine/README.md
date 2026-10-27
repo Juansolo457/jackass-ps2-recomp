@@ -9,7 +9,7 @@
 
 | Patch | What | Origin |
 |---|---|---|
-| (none yet) | | |
+| 01-setupthread-boot-args | `SetupThread` fills crt0's args block (argc, argv) when `PS2X_BOOT_ARGV0` is set; `PS2X_BOOT_ARGS` adds more. Jackass's `main` checks `argv[0]` for `cdrom0:` to use its disc paths instead of its development-kit `host0:` paths. Opt-in, so other games keep the runtime's behaviour | this project |
 
 To make one: edit inside `engine/runtime/`, then from the repo root
 `git -C engine/runtime diff > engine/patches/NN-name.patch` and add the header lines. Check the later
