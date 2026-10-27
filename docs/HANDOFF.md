@@ -155,6 +155,19 @@ window announced first). Done, in order, all in WSL:
   across padding. `tools/ghidra_functions.py` now adds "padding" starts: code after `jr ra`/`j` + delay slot + zero
   words that no branch targets (478 found: 247 lui/addiu-built, 31 even jal'd).
 
+- **Opening video, title screen, Story Mode menu (2026-10-27).** With the padding and code-range fixes the user saw
+  the opening video, then the "press X" title screen. Autopilot (`PS2X_PAD_SCRIPT`: Cross every 4 s from 30 s;
+  `PS2X_PCSX2_SNAPSHOT_DIR` frames every 600 fields) reached MTV Story Mode episode 1: menu text and layout right,
+  **background and TV panel corrupted** (texture/render-target bug, not yet investigated); stop at 90 s on
+  0x1F9EE0 (a function right after a `jr ra`, in a `{-1, fn, 0, 0}` table at 0x572BE8): `after-return` starts in
+  ghidra_functions.py (18,012 functions).
+- Build output moved to WSL ext4 (`build`, `generated` are symlinks to `~/jackass-out/`): from-scratch build 8m20s,
+  generate 2m44s.
+- **Steam Deck test package** (user's request): `tools/deck/release.sh` builds in the Steam Runtime 3 sniper SDK
+  container (g++ 14, static libstdc++; podman in WSL) and packages `private/steamdeck/JackassPS2-SteamDeck.zip`
+  (4.2 GB, contains the disc image: private). Checked: max glibc 2.30, runs from its own layout (`run.sh`). Native,
+  no Proton. That zip predates the 0x1F9EE0 fix: it should reach the Story Mode menu and stop on picking a stunt.
+
 The iteration loop from here: `tools/generate.sh && tools/recomp_skip.py && tools/build.sh -j 14`, then
 `tools/launch.sh --seconds 60` and read the last `[guest-branch:missing-target]` / ERROR lines of
 `private/logs/jackass-*.log`.
