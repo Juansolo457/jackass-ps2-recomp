@@ -92,8 +92,24 @@ window announced first). Done, in order, all in WSL:
 - The runtime reads the game **from the ISO** (`PS2CdImage`), not from `game/`: `private/jackass.iso` is what the
   program mounts; `game/` is for analysis.
 
-Next in this session: build the game (`tools/build.sh`), then a first `tools/launch.sh --seconds 60` with the
-software GS and with `libpcsx2gs.so`, logs in `private/logs/`.
+- Second generate with the skip list: unhandled instructions 28,145 → 439 (left in `sub_006A6F9C`, `sub_006AF5B0`,
+  `sub_006A7BA0`, `sub_0056ECB0`: to check), 932 functions skipped, 14,329 recompiled.
+- **First game build: success.** `tools/build.sh -j 14`, 15,648 steps, no errors, `build/linux/bin/jackass`
+  156 MB, next to `libpcsx2gs.so` and `libSDL3.so`. About 10 minutes, most of it the static library and
+  ranlib of 14k objects over the `/mnt/c` file bridge (a build tree on the WSL file system would be faster).
+- WSL's Vulkan is **llvmpipe** only (CPU), no GPU passthrough: fine for boot checks, not for speed.
+- **First boot (2026-10-27, `tools/launch.sh --seconds 60`, PCSX2 GS):** disc mounted from the ISO, ELF hash
+  matched, raylib window + PulseAudio + SDL3 controllers up, 75 SDK functions bound to the runtime, the guest
+  started at `0x100008`, set the EE FPU mode, and **stopped after 0.02 s** in the static constructor loop at
+  `0x1B0D30`: `JALR` to `0x6A8300`, a function nothing but the constructor table at `0x6AF690` references
+  (`[guest-branch:missing-target]`). Fix: `tools/ghidra_functions.py` adds every constructor-table entry (game.toml
+  `[code] ctor_tables`) and pointer targets that start with a stack-frame prologue → 13,990 functions. Leaf
+  virtual methods without a prologue will surface the same way (the log names the target and its caller); add them
+  as found.
+
+The iteration loop from here: `tools/generate.sh && tools/recomp_skip.py && tools/build.sh -j 14`, then
+`tools/launch.sh --seconds 60` and read the last `[guest-branch:missing-target]` / ERROR lines of
+`private/logs/jackass-*.log`.
 
 ## Route B chosen and the repo reshaped (2026-10-26)
 The user chose **Route B**: the Urban Reign PC port's runtime (PS2Recomp + PCSX2 GS on Vulkan, IRX
