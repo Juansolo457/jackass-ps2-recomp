@@ -63,8 +63,10 @@ set_source_files_properties("${JA_GENERATED_DIR}/register_functions.cpp" PROPERT
 
 set(JA_HOST_SOURCES
     main.cpp
+    jackass/call_profile.cpp
     jackass/function_hooks.cpp
     jackass/game_disc.cpp
+    jackass/hang_dump.cpp
     jackass/hle_bindings.cpp
     jackass/log.cpp
     jackass/sha256.cpp

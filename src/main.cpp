@@ -10,8 +10,10 @@
 #include "runtime/gs/gs_threaded_backend.h"
 #include "runtime/gs/gs_gpu_backend.h"
 #include "runtime/gs/gs_pcsx2_backend.h"
+#include "jackass/call_profile.h"
 #include "jackass/function_hooks.h"
 #include "jackass/game_disc.h"
+#include "jackass/hang_dump.h"
 #include "jackass/hle_bindings.h"
 #include "jackass/log.h"
 
@@ -187,6 +189,9 @@ int main(int argc, char *argv[])
     if (userDir != exeDir)
         setDefaultEnv("PS2X_DATA_DIR", userDir.string()); // the PCSX2 GS's shader cache and texture packs
     jackass::log::configureFromEnvironment();
+    // JA_HANG_DUMP=<s>: after s seconds print the guest kernel state (threads, PCs, semaphores, DMA, timers, INTC,
+    // GS CSR/IMR, PC samples) and, with JA_CALL_PROFILE=1, the most called functions (Urban Reign port's tools).
+    jackass::hangdump::startFromEnvironment();
 
     std::filesystem::path iso;
     for (int i = 1; i < argc; ++i)
@@ -316,7 +321,9 @@ int main(int argc, char *argv[])
             JA_INFO(Ee, "EE FPU host mode: round toward zero, denormals flushed");
         });
         jackass::installHleBindings(runtime);
+        jackass::hangdump::setRuntime(&runtime);
         jackass::FunctionHooks::instance().logBindings();
+        jackass::callprofile::installFromEnvironment(runtime); // last: wraps whatever the slots hold now
 
         JA_INFO(Boot, "starting guest at 0x" << std::hex << runtime.cpu().pc);
         runtime.run();
