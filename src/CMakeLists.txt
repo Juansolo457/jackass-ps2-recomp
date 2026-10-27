@@ -69,6 +69,7 @@ set(JA_HOST_SOURCES
     jackass/hang_dump.cpp
     jackass/hle_bindings.cpp
     jackass/log.cpp
+    jackass/ret_trace.cpp
     jackass/sha256.cpp
 )
 add_executable(jackass ${JA_HOST_SOURCES})

@@ -16,6 +16,7 @@
 #include "jackass/hang_dump.h"
 #include "jackass/hle_bindings.h"
 #include "jackass/log.h"
+#include "jackass/ret_trace.h"
 
 #if defined(PS2X_ENABLE_DEBUG_UI)
 #include "ps2_debug_panel.h"
@@ -322,6 +323,7 @@ int main(int argc, char *argv[])
         });
         jackass::installHleBindings(runtime);
         jackass::hangdump::setRuntime(&runtime);
+        jackass::rettrace::installFromEnvironment(runtime); // JA_RET_TRACE=addr,...
         jackass::FunctionHooks::instance().logBindings();
         jackass::callprofile::installFromEnvironment(runtime); // last: wraps whatever the slots hold now
 
