@@ -1,0 +1,24 @@
+# PS2Recomp configuration for Jackass: The Game (SLUS_216.27). Template: tools/generate.sh fills @ELF@, @MAP@ and
+# @OUT@ and runs ps2_recomp on the result. Modelled on the Urban Reign port's recomp/urban.toml (GPL-3.0); this
+# file is GPL-3.0-or-later like the rest of the recompiler configuration.
+[general]
+input = "@ELF@"
+output = "@OUT@"
+single_file_output = false
+output_worker_threads = 8
+# Function map exported from Ghidra (tools/ghidra_functions.py): the functions the recompiler's own discovery merges
+# into their predecessor (reachable only through pointers: vtable methods, callbacks). Ignored when missing.
+ghidra_output = "@MAP@"
+# Merge: keep the recompiler's own discoveries as well as Ghidra's.
+ghidra_map_merge = true
+patch_syscalls = false
+patch_cop0 = false
+patch_cache = false
+# The ELF has no symbols; SDK functions are identified by signature (the analyzer's SCE symbol database and the
+# Urban Reign-style finder) and bound to runtime handlers at start-up (src/jackass/hle_bindings.cpp), so nothing is
+# stubbed by name here.
+auto_stub_by_name = false
+# Tail jumps go through the dispatch table, or replacing a function at run time would miss those callers.
+direct_tail_calls = false
+skip = []
+stubs = []
