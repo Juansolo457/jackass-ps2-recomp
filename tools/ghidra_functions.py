@@ -154,6 +154,36 @@ def main():
     rejected = sorted(t for t, kind in extra.items() if kind != 'ctor' and not at_boundary(t))
     for t in rejected:
         del extra[t]
+    # Functions Ghidra merged into the one before them across alignment padding: code that follows a `jr ra` (or a
+    # tail `j`) and its delay slot plus one or more zero words, and that no branch instruction targets (a branch
+    # target would be a label of the same function). Found 478 in this game: 247 have their address built with
+    # lui/addiu and are called through a register (0x4142B0 stopped the first run that reached the game loop), 31
+    # are even jal'd directly.
+    branch_targets = set()
+    for _, offset, vaddr, _, filesz, _ in segments:
+        for i in range(0, filesz - 3, 4):
+            word = struct.unpack_from('<I', elf, offset + i)[0]
+            op, rs, rt = word >> 26, (word >> 21) & 31, (word >> 16) & 31
+            if op in (4, 5, 6, 7, 0x14, 0x15, 0x16, 0x17) or (op == 1 and rt in (0, 1, 2, 3, 16, 17, 18, 19)) or \
+                    (op in (0x11, 0x12) and rs == 8):
+                imm = word & 0xFFFF
+                branch_targets.add(vaddr + i + 4 + ((imm - 0x10000 if imm & 0x8000 else imm) << 2))
+    known = ghidra_starts | set(extra)
+    for lo, hi in code_ranges:
+        address = lo + 8
+        while address < hi:
+            word = word_at(address)
+            if word in (None, 0) or address in known or address in branch_targets:
+                address += 4
+                continue
+            back = address - 4
+            while back >= lo and word_at(back) == 0:
+                back -= 4
+            padded = back < address - 4
+            before = word_at(back - 4) if back - 4 >= lo else None
+            if padded and before is not None and (before == 0x03E00008 or (before >> 26) == 0x02):
+                extra[address] = 'padding'
+            address += 4
     starts = sorted(ghidra_starts | set(extra))
     kept, dropped, labels = [rows[0]], [], 0
     for start in sorted(extra):
@@ -181,7 +211,7 @@ def main():
     kept[1:] = sorted(kept[1:], key=lambda r: int(r[1], 16))
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
     csv.writer(open(out_csv, 'w', newline=''), lineterminator='\n').writerows(kept)
-    kinds = {k: sum(1 for v in extra.values() if v == k) for k in ('ctor', 'pointer', 'thunk', 'empty', 'vtable')}
+    kinds = {k: sum(1 for v in extra.values() if v == k) for k in ('ctor', 'pointer', 'thunk', 'empty', 'vtable', 'padding')}
     print(f'{os.path.relpath(out_csv, ROOT)}: {len(kept) - 1} functions ({len(ghidra_starts)} Ghidra, '
           f'pointer-reached {kinds}); {len(rejected)} pointer targets inside functions rejected; '
           f'{labels} labels skipped; dropped {dropped}')

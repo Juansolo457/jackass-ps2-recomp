@@ -144,6 +144,17 @@ window announced first). Done, in order, all in WSL:
   `tests/pmfhl_muldi3_test.cpp` replays the generated `__muldi3` (12 failures on the old macros, 0 on the new).
   This affects any 64-bit multiply in the game, not just `strtol`.
 
+- **Boot with patch 04:** main no longer exits; the main thread waited forever on semaphore 11 at 0x2FE840:
+  FMOD's EE<->IOP command channel (packet sent with `sceSifSendCmd`, reply expected through its service thread,
+  entry 0x2FE070, on semaphore 10). The runtime never delivered EE-to-IOP SIF commands (the EE call was a stub
+  reading args 5/6 from the stack; the IOP `sceSifAddCmdHandler` was a no-op). **engine/patches/05** delivers them.
+  The user lifted the ask-before-builds rule for this repo at this point.
+- **Boot with patch 05 (2026-10-27): past the locked loading screen.** FMOD.IRX answered ("Allocated ... for memory
+  pool"), init step 3 (0x133E20) ran and **the game loop 0x2986B0 ran 49 times**; then a stop at 10.8 s on
+  0x4142B0, a function whose address is built with lui/addiu and that Ghidra had merged into the one before it
+  across padding. `tools/ghidra_functions.py` now adds "padding" starts: code after `jr ra`/`j` + delay slot + zero
+  words that no branch targets (478 found: 247 lui/addiu-built, 31 even jal'd).
+
 The iteration loop from here: `tools/generate.sh && tools/recomp_skip.py && tools/build.sh -j 14`, then
 `tools/launch.sh --seconds 60` and read the last `[guest-branch:missing-target]` / ERROR lines of
 `private/logs/jackass-*.log`.
