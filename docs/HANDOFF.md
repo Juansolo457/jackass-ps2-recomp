@@ -124,6 +124,26 @@ window announced first). Done, in order, all in WSL:
   - `tools/ghidra_functions.py` takes pointer targets that are thunks (856), empty `jr ra` methods (971) and
     vtable neighbours (1,405), only on function boundaries (33 mid-function matches rejected): 17,222 functions.
 
+- **Fourth boot (3 s):** argv worked; SIO2MAN, MCMAN, MCSERV, PADMAN, LIBSD loaded from `cdrom0:\IRX` into the
+  IOP interpreter; FMODS.IRX hit "module arena exhausted"; `sceTtyInit` was a stopping placeholder.
+  **engine/patches/02** (TTY stubs) and **03** (IOP heap base 0x80000 → 0xC0000).
+- **Fifth boot (60 s):** all six IRX up, FMOD.IRX "Finished initializing. Going resident.", PADMAN drives the
+  emulated pad. The user saw **the logo flash, then a loading bar that stays**. Urban Reign's hang dump was
+  Windows-only: ported (guest kernel state; native stacks via `gdb -p`, installed in WSL).
+- **Hang dump + gdb:** the main thread was DORMANT inside `exit`: `main` (0x223590) had returned. The app's run
+  function 0x41F8B0 calls three init virtuals (vtable 0x6B2CB0: [4]=0x41FAA0→0x29AF30, [6]=0x299020,
+  [7]=0x133E20) and only then loops on [3]=0x2986B0. `tools`-less return tracer `JA_RET_TRACE` (src/jackass/
+  ret_trace.cpp; tail calls and thread switches hide some returns, entries are always logged) showed init 2
+  (0x299020) failed at its fifth check: loading `database/unlockable_items.xds` (0x2E8430). The file is in
+  PKCMN.ZIP. `JA_TRACE=HOOK` showed DISK.MAP read only 2 KB and a 32-sector read of LBA 0.
+- **Root cause:** `strtol("505")` returned 5 (the DISK.MAP parser at 0x42EF00 took the count as 5 and stopped,
+  every later file had no entry). `strtol`'s core (0x39BEC8) multiplies through Metrowerks `__muldi3`
+  (0x1B0E38: `mult`, `multu1`, `madd`, `pmfhl.lw`, `pcpyud`), and the runtime's `PS2_PMFHL_LW(hi, lo)` ignored the
+  pipeline-1 registers LO1/HI1 (and had the word order wrong), so every product came out 0.
+  **engine/patches/04** implements all five PMFHL variants and PMTHL.LW per the R5900 manual / PCSX2;
+  `tests/pmfhl_muldi3_test.cpp` replays the generated `__muldi3` (12 failures on the old macros, 0 on the new).
+  This affects any 64-bit multiply in the game, not just `strtol`.
+
 The iteration loop from here: `tools/generate.sh && tools/recomp_skip.py && tools/build.sh -j 14`, then
 `tools/launch.sh --seconds 60` and read the last `[guest-branch:missing-target]` / ERROR lines of
 `private/logs/jackass-*.log`.

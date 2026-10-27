@@ -1,0 +1,125 @@
+PMFHL/PMTHL with the R5900 pipeline-1 registers (LO1/HI1), in the runtime macros and the recompiler.
+Why: PS2_PMFHL_*(hi, lo) read only LO0/HI0 and packed them in the wrong order. Metrowerks __muldi3 (Jackass
+0x1B0E38: mult, multu1, madd, pmfhl.lw, pcpyud) then returned 0 for small products, so strtol("505") gave 5,
+the DISK.MAP loader stopped after 5 entries, later files read sector 0 and the start-up resource load failed.
+Semantics from the EE Core Instruction Set manual / PCSX2 MMI.cpp. Test: tests/pmfhl_muldi3_test.cpp in
+jackass-ps2-recomp (12 failures before, 0 after). Needs a ps2_recomp rebuild and a regenerate.
+Origin: this project (jackass-ps2-recomp), 2026-10-27; Killzone recomp patch 0010 fixed PMFHL.SH the same way.
+
+diff --git a/runtime/ps2xRecomp/src/lib/mmi_translation_helpers.cpp b/runtime/ps2xRecomp/src/lib/mmi_translation_helpers.cpp
+index 3be67a1..271592e 100644
+--- a/runtime/ps2xRecomp/src/lib/mmi_translation_helpers.cpp
++++ b/runtime/ps2xRecomp/src/lib/mmi_translation_helpers.cpp
+@@ -229,15 +229,15 @@ namespace ps2recomp
+         switch (subfunc)
+         {
+         case PMFHL_LW:
+-            return fmt::format("SET_GPR_VEC(ctx, {}, PS2_PMFHL_LW(ctx->hi, ctx->lo));", inst.rd);
++            return fmt::format("SET_GPR_VEC(ctx, {}, PS2_PMFHL_LW(ctx->hi, ctx->lo, ctx->hi1, ctx->lo1));", inst.rd);
+         case PMFHL_UW:
+-            return fmt::format("SET_GPR_VEC(ctx, {}, PS2_PMFHL_UW(ctx->hi, ctx->lo));", inst.rd);
++            return fmt::format("SET_GPR_VEC(ctx, {}, PS2_PMFHL_UW(ctx->hi, ctx->lo, ctx->hi1, ctx->lo1));", inst.rd);
+         case PMFHL_SLW:
+-            return fmt::format("SET_GPR_VEC(ctx, {}, PS2_PMFHL_SLW(ctx->hi, ctx->lo));", inst.rd);
++            return fmt::format("SET_GPR_VEC(ctx, {}, PS2_PMFHL_SLW(ctx->hi, ctx->lo, ctx->hi1, ctx->lo1));", inst.rd);
+         case PMFHL_LH:
+-            return fmt::format("SET_GPR_VEC(ctx, {}, PS2_PMFHL_LH(ctx->hi, ctx->lo));", inst.rd);
++            return fmt::format("SET_GPR_VEC(ctx, {}, PS2_PMFHL_LH(ctx->hi, ctx->lo, ctx->hi1, ctx->lo1));", inst.rd);
+         case PMFHL_SH:
+-            return fmt::format("SET_GPR_VEC(ctx, {}, PS2_PMFHL_SH(ctx->hi, ctx->lo));", inst.rd);
++            return fmt::format("SET_GPR_VEC(ctx, {}, PS2_PMFHL_SH(ctx->hi, ctx->lo, ctx->hi1, ctx->lo1));", inst.rd);
+         default:
+             return emitUnhandledInstruction(inst, fmt::format("Unhandled PMFHL instruction: function 0x{:X}", subfunc));
+         }
+@@ -250,7 +250,8 @@ namespace ps2recomp
+         switch (subfunc)
+         {
+         case PMFHL_LW:
+-            return fmt::format("{{ __m128i val = GPR_VEC(ctx, {}); ctx->lo = _mm_extract_epi32(val, 0); ctx->hi = _mm_extract_epi32(val, 1); }}", inst.rs);
++            // JA-Port: all four words (LO0, HI0, LO1, HI1), upper words kept, as the R5900 does.
++            return fmt::format("ps2_pmthl_lw(ctx->hi, ctx->lo, ctx->hi1, ctx->lo1, GPR_VEC(ctx, {}));", inst.rs);
+         default:
+             return emitUnhandledInstruction(inst, fmt::format("Unhandled PMTHL instruction: function 0x{:X}", subfunc));
+         }
+diff --git a/runtime/ps2xRuntime/include/ps2_runtime_macros.h b/runtime/ps2xRuntime/include/ps2_runtime_macros.h
+index 92357d5..1fee5af 100644
+--- a/runtime/ps2xRuntime/include/ps2_runtime_macros.h
++++ b/runtime/ps2xRuntime/include/ps2_runtime_macros.h
+@@ -783,11 +783,72 @@ inline __m128i ps2_u64_to_epi64_pair(uint64_t value)
+     return _mm_set1_epi64x(static_cast<long long>(value));
+ }
+ 
+-#define PS2_PMFHL_LW(hi, lo) _mm_unpacklo_epi64(ps2_u64_to_epi64_pair(lo), ps2_u64_to_epi64_pair(hi))
+-#define PS2_PMFHL_UW(hi, lo) _mm_unpackhi_epi64(ps2_u64_to_epi64_pair(lo), ps2_u64_to_epi64_pair(hi))
+-#define PS2_PMFHL_SLW(hi, lo) _mm_packs_epi32(ps2_u64_to_epi64_pair(lo), ps2_u64_to_epi64_pair(hi))
+-#define PS2_PMFHL_LH(hi, lo) _mm_shuffle_epi32(_mm_packs_epi32(ps2_u64_to_epi64_pair(lo), ps2_u64_to_epi64_pair(hi)), _MM_SHUFFLE(3, 1, 2, 0))
+-#define PS2_PMFHL_SH(hi, lo) _mm_shufflehi_epi16(_mm_shufflelo_epi16(_mm_packs_epi32(ps2_u64_to_epi64_pair(lo), ps2_u64_to_epi64_pair(hi)), _MM_SHUFFLE(3, 1, 2, 0)), _MM_SHUFFLE(3, 1, 2, 0))
++// JA-Port: PMFHL with the R5900's 128-bit LO/HI: LO = {LO0 (ctx->lo), LO1 (ctx->lo1)}, HI = {HI0 (ctx->hi),
++// HI1 (ctx->hi1)}, each 64 bits. The old macros read only LO0/HI0 and packed them in the wrong order, so
++// pmfhl.lw after mult/multu1 (the Metrowerks __muldi3, 0x1B0E38 in Jackass) returned the wrong 64-bit product:
++// strtol("505") gave 5. Semantics as in the EE Core Instruction Set manual and PCSX2 (MMI.cpp, PMFHL).
++inline uint32_t ps2_w32(uint64_t v, int word) { return static_cast<uint32_t>(v >> (32 * word)); }
++inline uint16_t ps2_h16(uint64_t v, int half) { return static_cast<uint16_t>(v >> (16 * half)); }
++inline uint16_t ps2_sat16(uint32_t w)
++{
++    const int32_t s = static_cast<int32_t>(w);
++    return static_cast<uint16_t>(s > 0x7FFF ? 0x7FFF : (s < -0x8000 ? -0x8000 : s));
++}
++inline uint64_t ps2_sat32x64(uint32_t hiWord, uint32_t loWord)
++{
++    const int64_t v = static_cast<int64_t>((static_cast<uint64_t>(hiWord) << 32) | loWord);
++    const int64_t c = v > 0x7FFFFFFFLL ? 0x7FFFFFFFLL : (v < -0x80000000LL ? -0x80000000LL : v);
++    return static_cast<uint64_t>(c);
++}
++// rd = {LO.w0, HI.w0, LO.w2, HI.w2}
++inline __m128i ps2_pmfhl_lw(uint64_t hi, uint64_t lo, uint64_t hi1, uint64_t lo1)
++{
++    return _mm_set_epi32(static_cast<int>(ps2_w32(hi1, 0)), static_cast<int>(ps2_w32(lo1, 0)),
++                         static_cast<int>(ps2_w32(hi, 0)), static_cast<int>(ps2_w32(lo, 0)));
++}
++// rd = {LO.w1, HI.w1, LO.w3, HI.w3}
++inline __m128i ps2_pmfhl_uw(uint64_t hi, uint64_t lo, uint64_t hi1, uint64_t lo1)
++{
++    return _mm_set_epi32(static_cast<int>(ps2_w32(hi1, 1)), static_cast<int>(ps2_w32(lo1, 1)),
++                         static_cast<int>(ps2_w32(hi, 1)), static_cast<int>(ps2_w32(lo, 1)));
++}
++// rd.d0 = sat32(HI.w0:LO.w0) sign-extended, rd.d1 = sat32(HI.w2:LO.w2)
++inline __m128i ps2_pmfhl_slw(uint64_t hi, uint64_t lo, uint64_t hi1, uint64_t lo1)
++{
++    return _mm_set_epi64x(static_cast<long long>(ps2_sat32x64(ps2_w32(hi1, 0), ps2_w32(lo1, 0))),
++                          static_cast<long long>(ps2_sat32x64(ps2_w32(hi, 0), ps2_w32(lo, 0))));
++}
++// rd.h = {LO.h0, LO.h2, HI.h0, HI.h2, LO.h4, LO.h6, HI.h4, HI.h6}
++inline __m128i ps2_pmfhl_lh(uint64_t hi, uint64_t lo, uint64_t hi1, uint64_t lo1)
++{
++    return _mm_set_epi16(static_cast<short>(ps2_h16(hi1, 2)), static_cast<short>(ps2_h16(hi1, 0)),
++                         static_cast<short>(ps2_h16(lo1, 2)), static_cast<short>(ps2_h16(lo1, 0)),
++                         static_cast<short>(ps2_h16(hi, 2)), static_cast<short>(ps2_h16(hi, 0)),
++                         static_cast<short>(ps2_h16(lo, 2)), static_cast<short>(ps2_h16(lo, 0)));
++}
++// rd.h = sat16 of {LO.w0, LO.w1, HI.w0, HI.w1, LO.w2, LO.w3, HI.w2, HI.w3}
++inline __m128i ps2_pmfhl_sh(uint64_t hi, uint64_t lo, uint64_t hi1, uint64_t lo1)
++{
++    return _mm_set_epi16(static_cast<short>(ps2_sat16(ps2_w32(hi1, 1))), static_cast<short>(ps2_sat16(ps2_w32(hi1, 0))),
++                         static_cast<short>(ps2_sat16(ps2_w32(lo1, 1))), static_cast<short>(ps2_sat16(ps2_w32(lo1, 0))),
++                         static_cast<short>(ps2_sat16(ps2_w32(hi, 1))), static_cast<short>(ps2_sat16(ps2_w32(hi, 0))),
++                         static_cast<short>(ps2_sat16(ps2_w32(lo, 1))), static_cast<short>(ps2_sat16(ps2_w32(lo, 0))));
++}
++// PMTHL.LW: LO.w0 = rs.w0, HI.w0 = rs.w1, LO.w2 = rs.w2, HI.w2 = rs.w3; LO.w1/w3 and HI.w1/w3 unchanged.
++inline void ps2_pmthl_lw(uint64_t &hi, uint64_t &lo, uint64_t &hi1, uint64_t &lo1, __m128i rs)
++{
++    alignas(16) uint32_t w[4];
++    _mm_store_si128(reinterpret_cast<__m128i *>(w), rs);
++    lo = (lo & 0xFFFFFFFF00000000ull) | w[0];
++    hi = (hi & 0xFFFFFFFF00000000ull) | w[1];
++    lo1 = (lo1 & 0xFFFFFFFF00000000ull) | w[2];
++    hi1 = (hi1 & 0xFFFFFFFF00000000ull) | w[3];
++}
++#define PS2_PMFHL_LW(hi, lo, hi1, lo1) ps2_pmfhl_lw((hi), (lo), (hi1), (lo1))
++#define PS2_PMFHL_UW(hi, lo, hi1, lo1) ps2_pmfhl_uw((hi), (lo), (hi1), (lo1))
++#define PS2_PMFHL_SLW(hi, lo, hi1, lo1) ps2_pmfhl_slw((hi), (lo), (hi1), (lo1))
++#define PS2_PMFHL_LH(hi, lo, hi1, lo1) ps2_pmfhl_lh((hi), (lo), (hi1), (lo1))
++#define PS2_PMFHL_SH(hi, lo, hi1, lo1) ps2_pmfhl_sh((hi), (lo), (hi1), (lo1))
+ 
+ // FPU (COP1) operations
+ #define FPU_SET_ACC(ctx, res) (ctx->f_acc = res)
