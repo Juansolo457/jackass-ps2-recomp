@@ -107,6 +107,23 @@ window announced first). Done, in order, all in WSL:
   virtual methods without a prologue will surface the same way (the log names the target and its caller); add them
   as found.
 
+- **Second boot:** no missing function; PCSX2's GS came up on Vulkan (llvmpipe) and presented fields, but 0 bytes of
+  GIF data in 60 s. `sceSifLoadModule` was unbound (the SCE database knows `_sceSifLoadModule`, not its one-call
+  wrappers), and the runtime has no IOP LOADFILE server, so the module load never answered. Fix:
+  `tools/sdk_functions.py` names the four wrappers by shape (`sceSifLoadModule` 0x1C9F60, called from the game's
+  loader at 0x4192A4; `sceSifLoadStartModule`, `sceSifLoadModuleBuffer`, `sceSifLoadStartModuleBuffer`).
+- **Third boot (3 s):** SIF RPC up, `GsSetCrt` (interlaced NTSC), then the IRX loaded from
+  `host0:S:\common\ps2\iop\modules\*.irx` (the developers' path; the runtime fell back to built-in stand-ins for
+  sio2man, mcman, mcserv, padman, libsd) and a stop at `0x2A5240`, a vtable this-adjusting thunk
+  (`j 0x29B2D0; addiu a0, a0, -32`). Causes and fixes:
+  - `main` (0x223590) does `strncmp(argv[0], "cdrom0:", 7)` (also accepts `-cd`) into a flag that becomes byte +124
+    of the global app object (`*(gp-28240)`); the IRX loader (0x419200) and the file layer (0x134434) pick
+    `cdrom0:` or `host0:` from it. The runtime's `SetupThread` never fills crt0's args block (0x6C41C0), so
+    argv[0] was null. **engine/patches/01** fills it when `PS2X_BOOT_ARGV0` is set; `src/main.cpp` sets
+    `cdrom0:\SLUS_216.27;1`. (Opt-in: God of War takes another IRX path with argv filled.)
+  - `tools/ghidra_functions.py` takes pointer targets that are thunks (856), empty `jr ra` methods (971) and
+    vtable neighbours (1,405), only on function boundaries (33 mid-function matches rejected): 17,222 functions.
+
 The iteration loop from here: `tools/generate.sh && tools/recomp_skip.py && tools/build.sh -j 14`, then
 `tools/launch.sh --seconds 60` and read the last `[guest-branch:missing-target]` / ERROR lines of
 `private/logs/jackass-*.log`.
