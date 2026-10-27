@@ -32,7 +32,9 @@ vu1_capture = "data/vu1_capture"                  # recorded VU1 microcode -> AO
 # 0x6A0000-0x6B0000; data between. The static constructor table (run before main by the loop at 0x1B0D30) holds
 # 83 function pointers, 26 of them to functions nothing else references, 16 of those leaf functions with no stack
 # frame: every entry is a function start (tools/ghidra_functions.py adds them).
-code_ranges = [["0x100000", "0x540000"], ["0x6A0000", "0x6B0000"]]
+# Exact ends: the last Ghidra function of the first region ends at 0x53E190 (data follows at 0x53E200), the second
+# region's last at 0x6AF684, right before the constructor table. Scanning past them made data into functions.
+code_ranges = [["0x100000", "0x53E190"], ["0x6A0000", "0x6AF684"]]
 data_range = ["0x540000", "0x6A0000"]
 ctor_tables = [["0x6AF690", "0x6AF7DC"]]
 

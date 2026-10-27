@@ -28,6 +28,7 @@ DISK.MAP
 
 # --- Generated translations of the game's code, recorded VU1 microcode, dumped IOP modules ---
 /generated/
+/generated
 /generated_*/
 vu1_capture/
 iop_modules/
@@ -39,6 +40,7 @@ iop_modules/
 
 # --- Build output, runtime state ---
 /build/
+/build
 /out/
 *.log
 *.dmp

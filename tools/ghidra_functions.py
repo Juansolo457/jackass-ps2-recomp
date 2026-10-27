@@ -180,8 +180,12 @@ def main():
             while back >= lo and word_at(back) == 0:
                 back -= 4
             padded = back < address - 4
+            # `back` is the last non-zero word before the zeros: the delay slot, or the jr ra / j itself when the
+            # delay slot was a nop and the walk took it with the padding (0x1B8AE0: jr ra; nop; nop; code).
+            last = word_at(back) if back >= lo else None
             before = word_at(back - 4) if back - 4 >= lo else None
-            if padded and before is not None and (before == 0x03E00008 or (before >> 26) == 0x02):
+            ends_function = lambda word: word is not None and (word == 0x03E00008 or (word >> 26) == 0x02)
+            if padded and (ends_function(before) or ends_function(last)):
                 extra[address] = 'padding'
             address += 4
     starts = sorted(ghidra_starts | set(extra))
