@@ -175,14 +175,14 @@ window announced first). Done, in order, all in WSL:
 - **In game (2026-10-27).** With 06, autopilot and the user both reached a stunt: the "video footage wishlist"
   goals screen, then the downhill stunt with the HUD (timer, goal icons, abrasion bonus), and the pause menu. Under
   WSL's CPU-only Vulkan (llvmpipe) the game runs at about 45% speed: a 200 s run is about 90 game seconds, which
-  first looked like an early exit. The call profile shows 0x2AB350 at ~7 M calls per report; not yet looked at.
+  first looked like an early exit. The call profile shows 0x2AB350 at ~7 M calls per report: a wait hook (registered through 0x47D320, a setter for a global) that a ring-buffer wait loop at 0x47CED4 calls while it spins until a DMA-completion interrupt handler advances the read pointer; it checks VIF1_STAT error bits every 1024 calls. So the EE busy-waits on the GIF/VU workers; a speed item, not a correctness one.
 - **Sound banks (2026-10-27).** FMODS.IRX logged `FMODFile_Open : ERROR` for every FSB: its IOP `sceCdSearchFile`
   (device-less `\DATA\PS2\SOUNDS\...;1` paths) only searched the virtual ISO built from an extracted folder, absent
   when only the image is mounted. **engine/patches/07** walks the image's ISO9660 directories (and formats IOP
   `printf` arguments); all 10 searches in a 200 s run now find their bank, no FMOD errors. Whether audio is audible
   is not yet checked (WSL run). `PS2X_IOP_CD_LOG=1` logs the IOP searches and reads.
-- Still open: corrupted textures/render targets (Story Mode menu background, TV panel), timing-dependent freezes
-  seen earlier, audio output check, the Steam Deck zip predates 06/07 and the 0x1F9EE0 fix (rebuild with
+- Still open, tracked as GitHub issues: corrupted textures/render targets (#1), audio output check (#2), speed and the
+  EE busy-wait (#3). Also timing-dependent freezes seen earlier (not reproduced since 06), the Steam Deck zip predates 06/07 and the 0x1F9EE0 fix (rebuild with
   `tools/deck/release.sh`).
 
 The iteration loop from here: `tools/generate.sh && tools/recomp_skip.py && tools/build.sh -j 14`, then
