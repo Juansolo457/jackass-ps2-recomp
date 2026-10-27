@@ -168,6 +168,23 @@ window announced first). Done, in order, all in WSL:
   (4.2 GB, contains the disc image: private). Checked: max glibc 2.30, runs from its own layout (`run.sh`). Native,
   no Proton. That zip predates the 0x1F9EE0 fix: it should reach the Story Mode menu and stop on picking a stunt.
 
+- **Main-menu freeze: heap corruption (2026-10-27).** The runtime's own guest allocations (SIF packets, RPC buffers)
+  came from the heap the game declares with `SetupHeap`, which Jackass's Metrowerks malloc owns; once FMOD's replies
+  flowed its blocks were overwritten and the heap walk at 0x102420 looped forever. **engine/patches/06**
+  (`PS2X_RUNTIME_ARENA=base:limit`, Killzone's idea) puts them at 0x80000-0x100000; `src/main.cpp` sets it.
+- **In game (2026-10-27).** With 06, autopilot and the user both reached a stunt: the "video footage wishlist"
+  goals screen, then the downhill stunt with the HUD (timer, goal icons, abrasion bonus), and the pause menu. Under
+  WSL's CPU-only Vulkan (llvmpipe) the game runs at about 45% speed: a 200 s run is about 90 game seconds, which
+  first looked like an early exit. The call profile shows 0x2AB350 at ~7 M calls per report; not yet looked at.
+- **Sound banks (2026-10-27).** FMODS.IRX logged `FMODFile_Open : ERROR` for every FSB: its IOP `sceCdSearchFile`
+  (device-less `\DATA\PS2\SOUNDS\...;1` paths) only searched the virtual ISO built from an extracted folder, absent
+  when only the image is mounted. **engine/patches/07** walks the image's ISO9660 directories (and formats IOP
+  `printf` arguments); all 10 searches in a 200 s run now find their bank, no FMOD errors. Whether audio is audible
+  is not yet checked (WSL run). `PS2X_IOP_CD_LOG=1` logs the IOP searches and reads.
+- Still open: corrupted textures/render targets (Story Mode menu background, TV panel), timing-dependent freezes
+  seen earlier, audio output check, the Steam Deck zip predates 06/07 and the 0x1F9EE0 fix (rebuild with
+  `tools/deck/release.sh`).
+
 The iteration loop from here: `tools/generate.sh && tools/recomp_skip.py && tools/build.sh -j 14`, then
 `tools/launch.sh --seconds 60` and read the last `[guest-branch:missing-target]` / ERROR lines of
 `private/logs/jackass-*.log`.

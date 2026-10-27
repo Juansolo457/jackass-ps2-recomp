@@ -1,0 +1,372 @@
+IOP disc image search and printf: sceCdSearchFile walks the mounted image's ISO9660 directories, and IOP printf
+formats its arguments. Why: with only a disc image (CdImage) given, the IOP cdvdman searched just the virtual ISO
+built from an extracted folder (CdRoot), which is not there, so every search failed. Jackass's FMODS.IRX opens its
+FSB sound banks by device-less path (\DATA\PS2\SOUNDS\MISC\MENUFX.FSB;1) and logged "FMODFile_Open : ERROR - %s"
+for each. printf printed that raw format; it now fills in a1-a3 and stack arguments. The virtual ISO is still
+used when the image has no match. Test: ps2xIOP/tests/iop_import_tests.cpp testCdvdSearchFileImage.
+Origin: this project (jackass-ps2-recomp), 2026-10-27.
+
+diff --git a/runtime/ps2xIOP/src/emulator/imports/iop_cdvd.cpp b/runtime/ps2xIOP/src/emulator/imports/iop_cdvd.cpp
+index 3c2bce1..e3d6991 100644
+--- a/runtime/ps2xIOP/src/emulator/imports/iop_cdvd.cpp
++++ b/runtime/ps2xIOP/src/emulator/imports/iop_cdvd.cpp
+@@ -60,6 +60,13 @@ namespace ps2x::iop::detail
+             destination[1] = static_cast<uint8_t>(value);
+         }
+ 
++        // JA-Port: little-endian 32-bit read (ISO9660 directory records).
++        uint32_t readLe32(const uint8_t *source)
++        {
++            return static_cast<uint32_t>(source[0]) | (static_cast<uint32_t>(source[1]) << 8u) |
++                   (static_cast<uint32_t>(source[2]) << 16u) | (static_cast<uint32_t>(source[3]) << 24u);
++        }
++
+         void writeLe32(uint8_t *destination, uint32_t value)
+         {
+             for (uint32_t i = 0u; i < 4u; ++i)
+@@ -620,6 +627,23 @@ namespace ps2x::iop::detail
+                 return false;
+ 
+             const std::string guestPath = memory.readString(nameAddress, 1024u);
++            // JA-Port: with a disc image mounted, look the path up in the image's own ISO9660 directories. The virtual
++            // ISO below is built from an extracted folder (CdRoot) and is not there when only an image is given, so
++            // every IOP-side search failed (FMOD's FSB banks: "FMODFile_Open : ERROR").
++            {
++                ImageEntry entry;
++                if (searchImage(guestPath, entry))
++                {
++                    if (cdLogEnabled())
++                        std::fprintf(stderr, "[iop-cd] search '%s' -> image lsn=%u size=%u\n", guestPath.c_str(), entry.lsn, entry.size);
++                    std::array<uint8_t, 32u> result{};
++                    writeLe32(result.data(), entry.lsn);
++                    writeLe32(result.data() + 4u, entry.size);
++                    std::memcpy(result.data() + 8u, entry.name.data(), std::min<size_t>(16u, entry.name.size()));
++                    result[24u] = entry.directory ? 2u : 0u;
++                    return memory.writeRam(resultAddress, result.data(), result.size());
++                }
++            }
+             IsoNode *node = findVirtualIsoNode(guestPath);
+             if (cdLogEnabled())
+                 std::fprintf(stderr, "[iop-cd] search '%s' -> %s lsn=%u size=%u\n", guestPath.c_str(), node ? "found" : "not found",
+@@ -637,6 +661,94 @@ namespace ps2x::iop::detail
+             return memory.writeRam(resultAddress, result.data(), result.size());
+         }
+ 
++        // JA-Port: ISO9660 lookup in the mounted image (2048-byte sectors), for sceCdSearchFile.
++        struct ImageEntry
++        {
++            uint32_t lsn = 0u;
++            uint32_t size = 0u;
++            bool directory = false;
++            std::string name;
++        };
++
++        bool readImageSector(uint32_t lsn, uint8_t *destination)
++        {
++            const std::string imagePath = host.hostPath(HostPathKind::CdImage);
++            if (imagePath.empty())
++                return false;
++            if (imageHandle == 0u)
++                imageHandle = host.openHostFile(imagePath);
++            if (imageHandle == 0u)
++                return false;
++            size_t bytesRead = 0u;
++            return host.readHostFile(imageHandle, static_cast<uint64_t>(lsn) * kSectorSize, destination, kSectorSize, bytesRead) &&
++                   bytesRead == kSectorSize;
++        }
++
++        bool searchImage(std::string_view guestPath, ImageEntry &found)
++        {
++            std::array<uint8_t, kSectorSize> sector{};
++            if (!readImageSector(16u, sector.data()) || sector[0] != 1u || std::memcmp(sector.data() + 1u, "CD001", 5u) != 0)
++                return false;
++            const uint8_t *rootRecord = sector.data() + 156u;
++            ImageEntry current;
++            current.lsn = readLe32(rootRecord + 2u);
++            current.size = readLe32(rootRecord + 10u);
++            current.directory = true;
++
++            std::string path(guestPath);
++            const size_t colon = path.find(':');
++            if (colon != std::string::npos)
++                path.erase(0u, colon + 1u);
++            std::replace(path.begin(), path.end(), '\\', '/');
++
++            size_t begin = 0u;
++            while (begin <= path.size())
++            {
++                const size_t end = path.find('/', begin);
++                const std::string component = path.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
++                begin = (end == std::string::npos) ? path.size() + 1u : end + 1u;
++                if (component.empty() || component == ".")
++                    continue;
++                if (!current.directory)
++                    return false;
++                const std::string wanted = normalizedIsoComponent(component);
++                bool matched = false;
++                const uint32_t sectors = (current.size + kSectorSize - 1u) / kSectorSize;
++                for (uint32_t index = 0u; index < sectors && !matched; ++index)
++                {
++                    if (!readImageSector(current.lsn + index, sector.data()))
++                        return false;
++                    size_t offset = 0u;
++                    while (offset < kSectorSize)
++                    {
++                        const uint8_t length = sector[offset];
++                        if (length == 0u || offset + length > kSectorSize)
++                            break;
++                        const uint8_t nameLength = sector[offset + 32u];
++                        if (nameLength > 0u && 33u + nameLength <= length)
++                        {
++                            const std::string identifier(reinterpret_cast<const char *>(sector.data() + offset + 33u), nameLength);
++                            if (!(nameLength == 1u && (identifier[0] == '\0' || identifier[0] == '\1')) &&
++                                normalizedIsoComponent(identifier) == wanted)
++                            {
++                                current.lsn = readLe32(sector.data() + offset + 2u);
++                                current.size = readLe32(sector.data() + offset + 10u);
++                                current.directory = (sector[offset + 25u] & 2u) != 0u;
++                                current.name = identifier;
++                                matched = true;
++                                break;
++                            }
++                        }
++                        offset += length;
++                    }
++                }
++                if (!matched)
++                    return false;
++            }
++            found = current;
++            return true;
++        }
++
+         IsoNode *fileForSector(uint32_t lsn)
+         {
+             for (IsoNode &node : nodes)
+diff --git a/runtime/ps2xIOP/src/emulator/imports/iop_stdio.cpp b/runtime/ps2xIOP/src/emulator/imports/iop_stdio.cpp
+index eed2b61..65929d5 100644
+--- a/runtime/ps2xIOP/src/emulator/imports/iop_stdio.cpp
++++ b/runtime/ps2xIOP/src/emulator/imports/iop_stdio.cpp
+@@ -4,6 +4,8 @@
+ #include "../core/iop_memory.h"
+ #include "ps2x/iop/iop_host.h"
+ 
++#include <cstdio>
++#include <cstring>
+ #include <string>
+ 
+ namespace ps2x::iop::detail
+@@ -31,8 +33,72 @@ namespace ps2x::iop::detail
+         switch (ordinal)
+         {
+         case 4: // printf
+-            logString("[IOP printf] ", a0);
++        {
++            // JA-Port: format the arguments (o32: a1-a3, then the stack from sp+16) instead of logging the raw
++            // format string, so module messages such as FMOD's "FMODFile_Open : ERROR - %s" name what failed.
++            const std::string format = m_memory.readString(a0, 2048u);
++            uint32_t argIndex = 1u;
++            const auto nextArg = [&]() -> uint32_t
++            {
++                const uint32_t index = argIndex++;
++                if (index < 4u)
++                    return cpu.gpr[4u + index];
++                return m_memory.read32(cpu.gpr[29] + 16u + (index - 4u) * 4u);
++            };
++            std::string text;
++            for (size_t i = 0u; i < format.size(); ++i)
++            {
++                if (format[i] != '%')
++                {
++                    text += format[i];
++                    continue;
++                }
++                std::string spec = "%";
++                ++i;
++                while (i < format.size() && std::strchr("-+ #0123456789.", format[i]) != nullptr)
++                    spec += format[i++];
++                while (i < format.size() && (format[i] == 'l' || format[i] == 'h'))
++                    ++i;
++                if (i >= format.size())
++                    break;
++                const char conversion = format[i];
++                char buffer[512];
++                switch (conversion)
++                {
++                case '%':
++                    text += '%';
++                    continue;
++                case 's':
++                {
++                    const uint32_t address = nextArg();
++                    const std::string value = address != 0u ? m_memory.readString(address, 256u) : std::string("(null)");
++                    std::snprintf(buffer, sizeof(buffer), (spec + 's').c_str(), value.c_str());
++                    break;
++                }
++                case 'd':
++                case 'i':
++                case 'c':
++                    std::snprintf(buffer, sizeof(buffer), (spec + conversion).c_str(), static_cast<int>(nextArg()));
++                    break;
++                case 'u':
++                case 'x':
++                case 'X':
++                case 'o':
++                    std::snprintf(buffer, sizeof(buffer), (spec + conversion).c_str(), static_cast<unsigned>(nextArg()));
++                    break;
++                case 'p':
++                    std::snprintf(buffer, sizeof(buffer), "0x%08x", static_cast<unsigned>(nextArg()));
++                    break;
++                default:
++                    std::snprintf(buffer, sizeof(buffer), "%%%c", conversion);
++                    break;
++                }
++                text += buffer;
++            }
++            m_host.log(LogLevel::Info, std::string("[IOP printf] ") + text);
++            setV0(static_cast<uint32_t>(text.size()));
+             return true;
++        }
+         case 5: // getchar
+         case 10:
+             setV0(0xFFFFFFFFu);
+diff --git a/runtime/ps2xIOP/tests/iop_import_tests.cpp b/runtime/ps2xIOP/tests/iop_import_tests.cpp
+index 3035618..a7f50dd 100644
+--- a/runtime/ps2xIOP/tests/iop_import_tests.cpp
++++ b/runtime/ps2xIOP/tests/iop_import_tests.cpp
+@@ -16,6 +16,7 @@
+ #include <filesystem>
+ #include <string>
+ #include <string_view>
++#include <vector>
+ 
+ namespace
+ {
+@@ -274,6 +275,118 @@ namespace
+         return passed;
+     }
+ 
++    // JA-Port: a host that serves a disc image file (CdImage) and nothing else, for the image search test.
++    class CdImageHost final : public NullHost
++    {
++    public:
++        explicit CdImageHost(std::filesystem::path imagePath)
++            : image(std::move(imagePath))
++        {
++        }
++
++        std::string hostPath(HostPathKind kind) const override
++        {
++            return kind == HostPathKind::CdImage ? image.string() : std::string{};
++        }
++        uint64_t openHostFile(std::string_view path) override
++        {
++            stream.open(std::string(path), std::ios::binary);
++            return stream.is_open() ? 1u : 0u;
++        }
++        bool readHostFile(uint64_t, uint64_t offset, void *destination, size_t size, size_t &bytesRead) override
++        {
++            stream.clear();
++            stream.seekg(static_cast<std::streamoff>(offset));
++            stream.read(static_cast<char *>(destination), static_cast<std::streamsize>(size));
++            bytesRead = static_cast<size_t>(stream.gcount());
++            return true;
++        }
++
++    private:
++        std::filesystem::path image;
++        std::ifstream stream;
++    };
++
++    // JA-Port: sceCdSearchFile with only a disc image mounted walks the image's ISO9660 directories. Jackass's
++    // FMODS.IRX searches device-less paths such as "\DATA\PS2\\SOUNDS\MISC\MENUFX.FSB;1"; they all failed before.
++    bool testCdvdSearchFileImage()
++    {
++        constexpr size_t kSector = 2048u;
++        std::vector<uint8_t> iso(21u * kSector, 0u);
++        const auto le32 = [&](size_t offset, uint32_t value)
++        {
++            for (uint32_t i = 0u; i < 4u; ++i)
++                iso[offset + i] = static_cast<uint8_t>(value >> (i * 8u));
++        };
++        const auto record = [&](size_t offset, uint32_t lsn, uint32_t size, bool directory, std::string_view name) -> size_t
++        {
++            const size_t length = (33u + name.size() + 1u) & ~size_t{1u};
++            iso[offset] = static_cast<uint8_t>(length);
++            le32(offset + 2u, lsn);
++            le32(offset + 10u, size);
++            iso[offset + 25u] = directory ? 2u : 0u;
++            iso[offset + 32u] = static_cast<uint8_t>(name.size());
++            std::memcpy(iso.data() + offset + 33u, name.data(), name.size());
++            return offset + length;
++        };
++        const size_t pvd = 16u * kSector;
++        iso[pvd] = 1u;
++        std::memcpy(iso.data() + pvd + 1u, "CD001", 5u);
++        (void)record(pvd + 156u, 18u, kSector, true, std::string_view("\0", 1u));
++        iso[17u * kSector] = 255u;
++        size_t offset = 18u * kSector;
++        offset = record(offset, 18u, kSector, true, std::string_view("\0", 1u));
++        offset = record(offset, 18u, kSector, true, std::string_view("\1", 1u));
++        (void)record(offset, 19u, kSector, true, "SOUNDS");
++        offset = 19u * kSector;
++        offset = record(offset, 19u, kSector, true, std::string_view("\0", 1u));
++        offset = record(offset, 18u, kSector, true, std::string_view("\1", 1u));
++        (void)record(offset, 20u, 4u, false, "MENUFX.FSB;1");
++        std::memcpy(iso.data() + 20u * kSector, "FSB3", 4u);
++
++        const auto suffix = std::to_string(
++            static_cast<unsigned long long>(std::chrono::steady_clock::now().time_since_epoch().count()));
++        const std::filesystem::path imagePath =
++            std::filesystem::temp_directory_path() / ("ps2x-iop-cdvd-image-" + suffix + ".iso");
++        {
++            std::ofstream out(imagePath, std::ios::binary);
++            out.write(reinterpret_cast<const char *>(iso.data()), static_cast<std::streamsize>(iso.size()));
++        }
++
++        bool passed = true;
++        {
++            CdImageHost host(imagePath);
++            IopMemory memory;
++            IopKernel kernel(memory);
++            kernel.reset();
++            IopCdvd cdvd(host, memory, kernel);
++            cdvd.reset();
++
++            constexpr uint32_t resultAddress = 0x2400u;
++            constexpr uint32_t pathAddress = 0x2480u;
++            const char path[] = "\\sounds\\menufx.fsb;1";
++            (void)memory.writeRam(pathAddress, path, sizeof(path));
++            IopCpuState cpu{};
++            cpu.gpr[4] = resultAddress;
++            cpu.gpr[5] = pathAddress;
++            passed = expect(cdvd.dispatchImport(10u, cpu), "cdvdman:10 was not handled (image)") &&
++                     expect(cpu.gpr[2] == 1u, "sceCdSearchFile did not find a path in the disc image") &&
++                     expect(memory.read32(resultAddress) == 20u, "image search returned the wrong LSN") &&
++                     expect(memory.read32(resultAddress + 4u) == 4u, "image search returned the wrong size");
++
++            const char missing[] = "\\SOUNDS\\NOPE.FSB;1";
++            (void)memory.writeRam(pathAddress, missing, sizeof(missing));
++            cpu = {};
++            cpu.gpr[4] = resultAddress;
++            cpu.gpr[5] = pathAddress;
++            passed = passed && expect(cdvd.dispatchImport(10u, cpu), "cdvdman:10 was not handled (missing)") &&
++                     expect(cpu.gpr[2] == 0u, "image search found a file that is not there");
++        }
++        std::error_code error;
++        std::filesystem::remove(imagePath, error);
++        return passed;
++    }
++
+     bool testTimrmanPeriodicCallback()
+     {
+         IopTimrman timrman;
+@@ -330,7 +443,7 @@ namespace
+ 
+ int main()
+ {
+-    if (!testLoadcoreRebootLibraryMode() || !testCdvdSpecialControl() || !testCdvdSearchFile() ||
++    if (!testLoadcoreRebootLibraryMode() || !testCdvdSpecialControl() || !testCdvdSearchFile() || !testCdvdSearchFileImage() ||
+         !testTimrmanPeriodicCallback())
+         return 1;
+     std::cout << "ps2xIOP import tests passed\n";

@@ -15,15 +15,19 @@
   ],
   "help": [
     "Metrowerks-compiled PS2 code: function boundaries for the recompiler",
-    "FMOD IOP module and FSB audio",
+    "PCSX2 GS render-target and texture corruption on menu backgrounds",
     "Sidhe Mab engine / RenderWare 3.7 stream formats"
   ],
   "project": "Jackass PS2 Recompiled",
-  "status": "planning",
-  "targets": ["Linux", "Linux (ARM64)", "Windows"],
+  "status": "in-progress",
+  "targets": [
+    "Linux",
+    "Linux (ARM64)",
+    "Windows"
+  ],
   "toolchain": "PS2Recomp",
   "approach": "The PS2 executable (SLUS-21627) statically recompiled to C++ with PS2Recomp on the Urban Reign PC port's runtime: the game's IRX modules interpreted, VU1 compiled ahead of time, PCSX2's GS as a library (Vulkan on Linux). Linux first, brought up bottom up one hardware layer at a time, each checked against PCSX2; a native renderer later.",
-  "notes": "Recon done: single stripped Metrowerks ELF, no overlays; Sidhe's Mab engine, Lua 5.0.2, ODE physics, FMOD audio, .pss movies. Repo shaped like Vnnc1/gow-native-pc (game profile, pinned runtime, numbered patches). Next: first runtime build, then the Ghidra function map. No game data included: bring your own PS2 copy.",
+  "notes": "Boots on Linux through the opening video, title screen and menus into gameplay: the first stunt runs with its HUD and pause menu. Seven runtime patches so far (boot args, TTY, IOP module arena, R5900 PMFHL/LO1-HI1, EE-to-IOP SIF commands, runtime arena, IOP disc search for FMOD sound banks). Open: corrupted textures/render targets on some menus, audio output, speed. Repo shaped like Vnnc1/gow-native-pc (game profile, pinned runtime, numbered patches). No game data included: bring your own PS2 copy.",
   "maintainers": [
     {
       "name": "Juansolo457",
