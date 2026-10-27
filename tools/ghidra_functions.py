@@ -81,16 +81,43 @@ def main():
         previous = word_at(start - 4)
         return start in BAD_STARTS or (previous is not None and is_control_transfer(previous))
 
-    starts = sorted(int(row[1], 0) for row in rows[1:] if row[0].startswith('FUN_') and not is_dropped(int(row[1], 0)))
+    ghidra_starts = {int(row[1], 0) for row in rows[1:] if row[0].startswith('FUN_') and not is_dropped(int(row[1], 0))}
+    # Functions reached only through pointers in data, which Ghidra's analysis does not follow:
+    # 1. every entry of the profile's static constructor tables ([code] ctor_tables);
+    # 2. any aligned word in the image that points into a code range at an `addiu sp, sp, -N` prologue (vtables,
+    #    callbacks). Pointer targets without a prologue are not taken: jump tables point inside functions too.
+    code = prof.get('code', {})
+    code_ranges = [(int(a, 0), int(b, 0)) for a, b in code.get('code_ranges', [])]
+    in_code = lambda a: any(lo <= a < hi for lo, hi in code_ranges)
+    extra = {}
+    for lo, hi in ((int(a, 0), int(b, 0)) for a, b in code.get('ctor_tables', [])):
+        for address in range(lo, hi, 4):
+            target = word_at(address)
+            if target and in_code(target) and target not in ghidra_starts:
+                extra[target] = 'ctor'
+    for _, offset, vaddr, _, filesz, _ in segments:
+        for i in range(0, filesz - 3, 4):
+            target = struct.unpack_from('<I', elf, offset + i)[0]
+            if target & 3 or target in ghidra_starts or target in extra or not in_code(target):
+                continue
+            first = word_at(target)
+            if first is not None and (first >> 16) == 0x27BD and first & 0x8000:
+                extra[target] = 'pointer'
+    starts = sorted(ghidra_starts | set(extra))
     kept, dropped, labels = [rows[0]], [], 0
+    for start in sorted(extra):
+        rows.append([f'PTR_{start:08X}', f'0x{start:08X}', f'0x{start + 4:08X}', '4'])
     for row in rows[1:]:
-        if not row[0].startswith('FUN_'):
+        if not row[0].startswith(('FUN_', 'PTR_')):
             labels += 1
             continue
         start = int(row[1], 0)
-        if is_dropped(start):
+        if row[0].startswith('FUN_') and is_dropped(start):
             dropped.append(hex(start))
             continue
+        if row[0].startswith('PTR_'):
+            # a pointer-reached start: its end is the next start, like every other row (set below)
+            row = [row[0], row[1], f'0x{start + 0x20000:08X}', '0']
         # Ghidra's End is the highest address of the body: a detached chunk would make a function span far too much
         # and be emitted again for every such function. Cut at the next start; holes after the body stay with it.
         end = int(row[2], 0)
@@ -100,9 +127,13 @@ def main():
             end = next_start if next_start - start <= 0x20000 else min(end, next_start)
         # Same names as the recompiler's own discovery, so generated file names stay stable.
         kept.append([f'sub_{start:08X}', f'0x{start:08X}', f'0x{end:08X}', str(end - start)])
+    kept[1:] = sorted(kept[1:], key=lambda r: int(r[1], 16))
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
-    csv.writer(open(out_csv, 'w', newline='')).writerows(kept)
-    print(f'{os.path.relpath(out_csv, ROOT)}: {len(kept) - 1} functions; {labels} labels skipped; dropped {dropped}')
+    csv.writer(open(out_csv, 'w', newline=''), lineterminator='\n').writerows(kept)
+    kinds = {k: sum(1 for v in extra.values() if v == k) for k in ('ctor', 'pointer')}
+    print(f'{os.path.relpath(out_csv, ROOT)}: {len(kept) - 1} functions ({len(ghidra_starts)} Ghidra, '
+          f'{kinds["ctor"]} constructor-table, {kinds["pointer"]} pointer-reached); {labels} labels skipped; '
+          f'dropped {dropped}')
 
 
 if __name__ == '__main__':

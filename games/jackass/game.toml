@@ -27,6 +27,15 @@ sdk_functions = "src/jackass/sdk_functions.inc"   # Sony SDK functions by signat
 host_sources = "src"                              # our port: main, disc check, HLE bindings, hooks
 vu1_capture = "data/vu1_capture"                  # recorded VU1 microcode -> AOT (runtime's vu1_recomp)
 
+[code]
+# Address layout of the single `main` section (docs/FINDINGS.md). Code: 0x100000-0x540000 and the tail
+# 0x6A0000-0x6B0000; data between. The static constructor table (run before main by the loop at 0x1B0D30) holds
+# 83 function pointers, 26 of them to functions nothing else references, 16 of those leaf functions with no stack
+# frame: every entry is a function start (tools/ghidra_functions.py adds them).
+code_ranges = [["0x100000", "0x540000"], ["0x6A0000", "0x6B0000"]]
+data_range = ["0x540000", "0x6A0000"]
+ctor_tables = [["0x6AF690", "0x6AF7DC"]]
+
 [disc]
 # How the game reads its files: not by ISO lookup but through its own LBA table.
 file_table = "DISK.MAP"        # text: count; then "\PATH;1",start_lba,end_lba,sectors,size; per file (CRLF)
