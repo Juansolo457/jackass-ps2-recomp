@@ -154,6 +154,26 @@ def main():
     rejected = sorted(t for t, kind in extra.items() if kind != 'ctor' and not at_boundary(t))
     for t in rejected:
         del extra[t]
+    # Data pointers to code that directly follows a `jr ra` and its delay slot (no padding, any first instruction):
+    # 0x1F9EE0, held in a {-1, function, 0, 0} table at 0x572BE8, stopped the run at the story-mode menu. A jump
+    # table can point after a `jr ra` too (a case after a returning case), so a pointer whose neighbouring words
+    # point into the same function is left alone: that is a jump table, not a function table.
+    sorted_known = sorted(ghidra_starts | set(extra))
+
+    def containing(address):
+        k = bisect.bisect_right(sorted_known, address) - 1
+        return sorted_known[k] if k >= 0 else None
+
+    for address, target in image:
+        if target & 3 or not in_code(target) or target in ghidra_starts or target in extra:
+            continue
+        if word_at(target - 8) != 0x03E00008 or word_at(target) in (None, 0):
+            continue
+        owner = containing(target)
+        neighbours = [value_at.get(address - 4), value_at.get(address + 4)]
+        if any(n is not None and not n & 3 and in_code(n) and containing(n) == owner for n in neighbours):
+            continue
+        extra[target] = 'after-return'
     # Functions Ghidra merged into the one before them across alignment padding: code that follows a `jr ra` (or a
     # tail `j`) and its delay slot plus one or more zero words, and that no branch instruction targets (a branch
     # target would be a label of the same function). Found 478 in this game: 247 have their address built with
@@ -215,7 +235,8 @@ def main():
     kept[1:] = sorted(kept[1:], key=lambda r: int(r[1], 16))
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
     csv.writer(open(out_csv, 'w', newline=''), lineterminator='\n').writerows(kept)
-    kinds = {k: sum(1 for v in extra.values() if v == k) for k in ('ctor', 'pointer', 'thunk', 'empty', 'vtable', 'padding')}
+    kinds = {k: sum(1 for v in extra.values() if v == k)
+             for k in ('ctor', 'pointer', 'thunk', 'empty', 'vtable', 'after-return', 'padding')}
     print(f'{os.path.relpath(out_csv, ROOT)}: {len(kept) - 1} functions ({len(ghidra_starts)} Ghidra, '
           f'pointer-reached {kinds}); {len(rejected)} pointer targets inside functions rejected; '
           f'{labels} labels skipped; dropped {dropped}')

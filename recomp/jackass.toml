@@ -20,11 +20,16 @@ patch_cache = false
 auto_stub_by_name = false
 # Tail jumps go through the dispatch table, or replacing a function at run time would miss those callers.
 direct_tail_calls = false
-# Functions the recompiler's own scan found in the data region 0x5A0000-0x6A0000 (VIF/GIF tags, strings, tables;
+# Functions the recompiler's own scan found outside the code ranges of games/jackass/game.toml (VIF/GIF tags, strings, tables;
 # Ghidra places no function there and the code ends near 0x53E000, see docs/FINDINGS.md). Decoding them as code gave
 # 28k unhandled-instruction reports in the first run; skipped, they are not emitted. Regenerate this list with
 # tools/recomp_skip.py after a function-map change.
 skip = [
+  "sub_0056EA2C",
+  "sub_0056EB08",
+  "sub_0056F178",
+  "sub_0056F938",
+  "sub_0056F940",
   "sub_00606000",
   "sub_00606060",
   "sub_0060C180",
@@ -957,5 +962,16 @@ skip = [
   "sub_00697C10",
   "sub_00697C80",
   "sub_00697F50",
+  "sub_006A6ED0",
+  "sub_006A6F20",
+  "sub_006A6F90",
+  "sub_006A6F9C",
+  "sub_006A7A50",
+  "sub_006A7A90",
+  "sub_006A7AE0",
+  "sub_006A7BA0",
+  "sub_006A8250",
+  "sub_006A8260",
+  "sub_006A8270",
 ]
 stubs = []

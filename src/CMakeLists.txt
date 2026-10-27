@@ -19,7 +19,10 @@ set(JA_RUNTIME_INCLUDE "${JA_RUNTIME_ROOT}/runtime/ps2xRuntime/include")
 set(JA_RUNTIME_LIB "${JA_RUNTIME_ROOT}/runtime/ps2xRuntime/src/lib")
 
 if(NOT EXISTS "${JA_GENERATED_DIR}/register_functions.cpp")
-    message(FATAL_ERROR "Recompiled game code not found in ${JA_GENERATED_DIR}: run tools/generate.sh first.")
+    # Not an error: tools/setup.sh configures before any code is generated, to build ps2_recomp first.
+    # tools/build.sh configures again once tools/generate.sh has written generated/.
+    message(STATUS "Recompiled game code not found in ${JA_GENERATED_DIR}: the game target is skipped until tools/generate.sh runs.")
+    return()
 endif()
 file(GLOB JA_GENERATED_SOURCES CONFIGURE_DEPENDS "${JA_GENERATED_DIR}/*.cpp")
 

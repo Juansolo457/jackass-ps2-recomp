@@ -21,7 +21,7 @@ done
 if pgrep -x jackass >/dev/null 2>&1; then echo "build: the game is running; close it first (the link would fail)" >&2; exit 1; fi
 # generated/ changed since configure? CONFIGURE_DEPENDS globs re-run CMake by themselves; src/CMakeLists.txt is new
 # when the first game build happens, so configure again when the jackass target is unknown.
-if ! cmake --build "$build" --target help 2>/dev/null | grep -q '^jackass'; then
+if ! cmake --build "$build" --target help 2>/dev/null | grep -q '^jackass:'; then
   cmake -S "$root" -B "$build"
 fi
 cmake --build "$build" --target "$target" -- -j "$jobs"
