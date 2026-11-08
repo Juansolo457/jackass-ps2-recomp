@@ -23,6 +23,7 @@ cp -L "$bin/jackass" "$bin/libpcsx2gs.so" "$stage/bin/"
 cp -L "$bin"/libSDL3.so.0 "$stage/bin/"
 cp -L "$out/deps/shaderc/lib/libshaderc_shared.so.1" "$out/deps/libpng/libpng16.so.16" "$stage/bin/"
 cp -r "$bin/resources" "$stage/bin/"
+cp "$root/tools/deck/probe.sh" "$stage/bin/probe.sh"   # per-thread CPU log for debug runs (user/debug.env)
 [ -d "$bin/shadercache_pcsx2" ] && cp -r "$bin/shadercache_pcsx2" "$stage/bin/"
 strip --strip-debug "$stage/bin/jackass" "$stage/bin/libpcsx2gs.so" 2>/dev/null || true
 ln "$iso" "$stage/game/jackass.iso" 2>/dev/null || cp "$iso" "$stage/game/jackass.iso"
@@ -34,7 +35,10 @@ here=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$here/user" "$here/logs"
 export JA_USER_DIR="$here/user"                      # memory card, shader cache, settings
 export LD_LIBRARY_PATH="$here/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-log="$here/logs/jackass-$(date +%Y%m%d-%H%M%S).log"
+stamp=$(date +%Y%m%d-%H%M%S)
+log="$here/logs/jackass-$stamp.log"
+# Optional debug switches (PS2X_*/JA_* lines, sourced as shell; $here and $stamp are set): user/debug.env.
+if [ -f "$here/user/debug.env" ]; then set -a; . "$here/user/debug.env"; set +a; fi
 cd "$here/bin"
 ./jackass --iso "$here/game/jackass.iso" "$@" > "$log" 2>&1
 code=$?
