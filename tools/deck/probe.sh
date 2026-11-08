@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copy to user/debug.env (with the lines from docs/HANDOFF.md) for a debug run; PIN=1 pins VUThread.
+# Usage (from user/debug.env, which run.sh sources): ( bash "$here/bin/probe.sh" "$here" "$stamp" & ) with PIN=0 or 1.
 # Started from user/debug.env next to a game run: every 5 s logs how busy each game thread was (% of one CPU) and the
 # average CPU clock, to logs/threads-<stamp>.txt. PIN=1 also gives VUThread a physical core of its own (its SMT sibling
 # left idle; every other thread kept off that core).
