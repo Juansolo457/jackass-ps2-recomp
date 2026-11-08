@@ -49,6 +49,10 @@
 #define JA_ARCH_NAME "SSE41"
 #endif
 
+#if JA_HAS_VU1_PROGRAMS
+void registerGeneratedVu1Programs(); // generated/vu1/vu1_programs.cpp (vu1_recomp output; VU0 images too)
+#endif
+
 namespace
 {
     // The runtime uses SSE4.1 intrinsics (the PCSX2 minimum); an older CPU gets a message, not an illegal instruction.
@@ -327,6 +331,10 @@ int main(int argc, char *argv[])
             JA_INFO(Ee, "EE FPU host mode: round toward zero, denormals flushed");
         });
         jackass::installHleBindings(runtime);
+#if JA_HAS_VU1_PROGRAMS
+        registerGeneratedVu1Programs(); // VU microcode compiled ahead of time; images not in it stay interpreted
+        JA_INFO(Boot, "compiled VU microprograms registered (PS2X_VU1_RECOMP=0 / PS2X_VU0_RECOMP=0 to interpret)");
+#endif
         jackass::hangdump::setRuntime(&runtime);
         jackass::rettrace::installFromEnvironment(runtime); // JA_RET_TRACE=addr,...
         jackass::FunctionHooks::instance().logBindings();

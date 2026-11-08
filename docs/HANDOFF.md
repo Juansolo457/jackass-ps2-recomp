@@ -197,7 +197,17 @@ window announced first). Done, in order, all in WSL:
   stunt draw clean.
 - New debugging switches in src/: `JA_RET_TRACE_MAX=<n>` (calls logged per wrapped function, default 50),
   `JA_ZIP_CHECK=1` (minizip CRC test at unzCloseCurrentFile 0x43DAA0), `JA_DUMP_RAM` now writes `<file>.<n>` per dump.
-- Still open, tracked as GitHub issues: audio output check (#2), speed and the EE busy-wait (#3). Timing-dependent
+- **Gameplay speed: VU microcode compiled ahead of time (2026-11-07, issue #3).** The user saw 3 fps in stunts on the
+  Deck. The PC was no better: gameplay at 6.5 fields/s, 11% of full speed (`PS2X_FRAME_TIMES`), and `perf` put 72% of
+  the samples on the VU thread, in the runtime's VU interpreter. Patch 08 made no difference (A/B with
+  `PS2X_PATH3_PACKETS=0`). Fix: capture the 18 VU0/VU1 images (`PS2X_VU1_CAPTURE`/`PS2X_VU0_CAPTURE`), compile them
+  with the runtime's `vu1_recomp` into `generated/vu1` (`tools/vu_aot.sh`; `src/main.cpp` registers them) -> 97% of
+  full speed on the PC. vu1_recomp's fast defaults (Urban Reign's) miscompiled four images (960e12a9bbea29be,
+  1c20e4208088da94, 33fa58d767b70b25, fb467455af1e1f6b; `PS2X_VU1_VERIFY=obs`, the character vanished in stunts);
+  `tools/vu_aot.sh` uses the conservative settings, which matched the interpreter on all 18 over ~1.1M runs at the same
+  speed. **engine/patches/09** makes verify log every mismatching image. Which fast default breaks them is not
+  narrowed down. New captures (other stunts) may add images: recapture, rerun `tools/vu_aot.sh`, verify.
+- Still open, tracked as GitHub issues: audio output check (#2), speed on the Deck (#3; the EE busy-wait is still there). Timing-dependent
   freezes seen early on have not come back since patch 06.
 
 The iteration loop from here: `tools/generate.sh && tools/recomp_skip.py && tools/build.sh -j 14`, then
