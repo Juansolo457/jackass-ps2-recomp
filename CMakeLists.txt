@@ -51,6 +51,11 @@ if(JA_PCSX2_GS AND (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
     add_subdirectory("${JA_RUNTIME_ROOT}/thirdparty/pcsx2-gs" "${CMAKE_BINARY_DIR}/pcsx2-gs" EXCLUDE_FROM_ALL)
 endif()
 
+# Regression tests for engine patches that need the runtime library (built on request, not by default).
+add_executable(ja_path3_packets_test EXCLUDE_FROM_ALL tests/path3_packets_test.cpp)
+target_link_libraries(ja_path3_packets_test PRIVATE ps2_runtime)
+set_target_properties(ja_path3_packets_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 # Our port: src/CMakeLists.txt builds the game (recompiled code in generated/ + src/) once Layer 2 produces it.
 if(EXISTS "${CMAKE_SOURCE_DIR}/src/CMakeLists.txt")
     add_subdirectory(src)

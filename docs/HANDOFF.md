@@ -181,9 +181,24 @@ window announced first). Done, in order, all in WSL:
   when only the image is mounted. **engine/patches/07** walks the image's ISO9660 directories (and formats IOP
   `printf` arguments); all 10 searches in a 200 s run now find their bank, no FMOD errors. Whether audio is audible
   is not yet checked (WSL run). `PS2X_IOP_CD_LOG=1` logs the IOP searches and reads.
-- Still open, tracked as GitHub issues: corrupted textures/render targets (#1), audio output check (#2), speed and the
-  EE busy-wait (#3). Also timing-dependent freezes seen earlier (not reproduced since 06), the Steam Deck zip predates 06/07 and the 0x1F9EE0 fix (rebuild with
-  `tools/deck/release.sh`).
+- **Texture corruption fixed (2026-11-07, issue #1).** Menus (main, Story Mode, TV panel) and stunt terrain showed
+  noise and purple/green speckle; the user saw it on the Deck too. Ruled out, in order: the VU/GIF worker threads
+  (`PS2X_MTVU=0`, same picture), the GS (the runtime's software GS draws the same), inflate (`JA_ZIP_CHECK=1`: ~500
+  fully read zip entries, 0 CRC mismatches), the game's texture copies in EE RAM (byte-identical to the disc in every
+  RAM dump), the uploaded bytes (every IMAGE payload and palette in a `PS2X_GIF_DUMP` is in the disc files), texture
+  coordinates (sane). Decoding GS memory (`engine/runtime/tools/gs_vram.py` on the dump's 'M' record) showed the
+  terrain's 4-bit texture at 0x30C0 and its palette as garbage while its neighbours were clean, and
+  `tools/gif_overlap.py` showed why: a field's ~200 uploads all reached the GS before any draw, wrapping the
+  texture-cache ring (0x2BC0-0x3680) over textures still to be drawn. RenderWare sends the frame's uploads as one
+  GIF-channel chain while VIF1 masks PATH3 and opens PATH3 for one texture at a time (FLUSHA; MSKPATH3 0; MSKPATH3 1)
+  before the draws using it (`PS2X_GIF_PATH_LOG=<s>:<n>` shows it); the runtime released the whole chain at the first
+  unmask. **engine/patches/08** releases one EOP-terminated GIF packet per unmask window
+  (`tests/path3_packets_test.cpp`; `PS2X_PATH3_PACKETS=0` is the old behaviour). Autopilot: menus and the whole
+  stunt draw clean.
+- New debugging switches in src/: `JA_RET_TRACE_MAX=<n>` (calls logged per wrapped function, default 50),
+  `JA_ZIP_CHECK=1` (minizip CRC test at unzCloseCurrentFile 0x43DAA0), `JA_DUMP_RAM` now writes `<file>.<n>` per dump.
+- Still open, tracked as GitHub issues: audio output check (#2), speed and the EE busy-wait (#3). Timing-dependent
+  freezes seen early on have not come back since patch 06.
 
 The iteration loop from here: `tools/generate.sh && tools/recomp_skip.py && tools/build.sh -j 14`, then
 `tools/launch.sh --seconds 60` and read the last `[guest-branch:missing-target]` / ERROR lines of

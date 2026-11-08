@@ -126,14 +126,17 @@ namespace jackass::hangdump
                          static_cast<unsigned long long>(runtime->memory().gifCopyCount()),
                          static_cast<unsigned long long>(runtime->memory().gsWriteCount()),
                          static_cast<unsigned long long>(runtime->memory().vifWriteCount()));
-            // JA_DUMP_RAM=<file>: write all 32 MB of guest RAM (offline analysis of DMA chains, structures...).
+            // JA_DUMP_RAM=<file>: write all 32 MB of guest RAM (offline analysis of DMA chains, structures...). Each
+            // dump gets its own file, <file>.<n> (n = 1, 2, ...), so repeated dumps can be compared.
             if (const char *path = std::getenv("JA_DUMP_RAM"); path && *path)
             {
-                if (std::FILE *file = std::fopen(path, "wb"))
+                static unsigned dumpIndex = 0u;
+                const std::string numbered = std::string(path) + "." + std::to_string(++dumpIndex);
+                if (std::FILE *file = std::fopen(numbered.c_str(), "wb"))
                 {
                     std::fwrite(runtime->memory().getRDRAM(), 1, 32u * 1024u * 1024u, file);
                     std::fclose(file);
-                    std::fprintf(stderr, "[hang-dump]   RAM written to %s\n", path);
+                    std::fprintf(stderr, "[hang-dump]   RAM written to %s\n", numbered.c_str());
                 }
             }
             // JA_DUMP_VRAM=<file>: the host copy of the 4 MB GS VRAM (authoritative with PS2X_GS_GPU=0).

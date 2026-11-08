@@ -1,0 +1,271 @@
+PATH3 at GIF packet granularity: PATH3 data that arrives while VIF1's MSKPATH3 masks PATH3 is split into
+EOP-terminated GIF packets; clearing the mask releases one packet (the GIF finishes the packet it started before
+a new MSKPATH3 takes effect), and the rest flow once the VIF1 stream carries on with PATH3 unmasked. Released
+packets take submitGifPacket's route, so they stay in order with PATH1/PATH2 on the VU/GIF workers.
+Why: Jackass's RenderWare texture cache sends a frame's ~50 texture uploads as one ~950 KB GIF-channel chain
+while PATH3 is masked, then opens PATH3 for one texture at a time (FLUSHA; MSKPATH3 0; MSKPATH3 1) right before
+the draws that use it, reusing a ring of GS memory (0x2BC0-0x3680). The runtime queued the chain as one blob and
+released all of it at the first unmask, so later uploads wrapped the ring and overwrote textures and palettes
+that pending draws still sampled: noise on the main and Story Mode menus, purple/green terrain in stunts.
+PS2X_PATH3_PACKETS=0 restores the old behaviour. Also PS2X_GIF_PATH_LOG=<seconds>:<count>, a log of GIF
+submissions (path, size, first tag, mask) and VIF1 MSKPATH3/FLUSH/FLUSHA, for finding this kind of ordering bug.
+Test: tests/path3_packets_test.cpp (cmake --build build/linux --target ja_path3_packets_test).
+Origin: this project (jackass-ps2-recomp), 2026-11-07.
+
+diff --git a/runtime/ps2xRuntime/include/runtime/ps2_memory.h b/runtime/ps2xRuntime/include/runtime/ps2_memory.h
+index 0f1f994..4fbb39b 100644
+--- a/runtime/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/runtime/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -333,6 +333,15 @@ public:
+ 
+     bool isPath3Masked() const { return m_path3Masked; }
+     void flushMaskedPath3Packets(bool drainImmediately = true);
++    // JA-Port: PATH3 at GIF packet granularity (PS2X_PATH3_PACKETS=0 turns it off). Data arriving while MSKPATH3
++    // masks PATH3 is split into EOP-terminated GIF packets; clearing the mask releases one packet (the GIF finishes
++    // the packet it started before a new MSKPATH3 takes effect), and the rest flow once the VIF1 stream carries on
++    // with PATH3 still unmasked.
++    static bool path3PacketMode();
++    void queueMaskedPath3(const uint8_t *data, uint32_t sizeBytes);
++    void releaseOneMaskedPath3Packet();
++    void emitPath3Now(const uint8_t *data, uint32_t sizeBytes);
++    bool path3WindowOpen() const { return m_path3WindowOpen; }
+ 
+     void submitGifPacket(GifPathId pathId, const uint8_t *data, uint32_t sizeBytes, bool drainImmediately = true, bool path2DirectHl = false);
+     void processGIFPacket(uint32_t srcPhysAddr, uint32_t qwCount);
+@@ -410,6 +419,8 @@ public:
+     uint32_t m_vif1PendingPath2ImageQwc = 0u;
+     bool m_vif1PendingPath2DirectHl = false;
+     std::vector<std::vector<uint8_t>> m_path3MaskedFifo;
++    std::vector<uint8_t> m_path3Partial; // JA-Port: masked PATH3 bytes not yet ending in an EOP tag
++    bool m_path3WindowOpen = false;      // JA-Port: unmasked with packets still queued (see path3PacketMode)
+ 
+     struct PendingTransfer
+     {
+diff --git a/runtime/ps2xRuntime/src/lib/ps2_memory.cpp b/runtime/ps2xRuntime/src/lib/ps2_memory.cpp
+index bb34025..b39e982 100644
+--- a/runtime/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/runtime/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -3071,8 +3071,113 @@ std::vector<uint32_t> PS2Memory::consumeCompletedDmacCauses()
+     return causes;
+ }
+ 
++extern thread_local int g_gsTracePath; // gs_frontend.cpp, for PS2X_GS_TRACE
++
++bool PS2Memory::path3PacketMode()
++{
++    static const bool enabled = []
++    {
++        const char *value = std::getenv("PS2X_PATH3_PACKETS");
++        return !(value && *value == '0');
++    }();
++    return enabled;
++}
++
++void PS2Memory::queueMaskedPath3(const uint8_t *data, uint32_t sizeBytes)
++{
++    m_path3Partial.insert(m_path3Partial.end(), data, data + sizeBytes);
++    // Cut complete EOP-terminated GIF packets off the front.
++    size_t pos = 0u;
++    size_t packetStart = 0u;
++    const size_t total = m_path3Partial.size();
++    while (pos + 16u <= total)
++    {
++        uint64_t lo = 0u, hi = 0u;
++        std::memcpy(&lo, m_path3Partial.data() + pos, 8u);
++        std::memcpy(&hi, m_path3Partial.data() + pos + 8u, 8u);
++        const uint64_t nloop = lo & 0x7FFFu;
++        const bool eop = ((lo >> 15) & 1u) != 0u;
++        const uint32_t flg = static_cast<uint32_t>((lo >> 58) & 3u);
++        uint64_t nreg = (lo >> 60) & 0xFu;
++        if (nreg == 0u)
++            nreg = 16u;
++        uint64_t body = 0u;
++        if (flg == 0u)
++            body = nloop * nreg * 16u;
++        else if (flg == 1u)
++            body = ((nloop * nreg + 1u) / 2u) * 16u;
++        else
++            body = nloop * 16u;
++        if (pos + 16u + body > total)
++            break; // the rest of this tag has not arrived yet
++        pos += 16u + static_cast<size_t>(body);
++        if (eop)
++        {
++            m_path3MaskedFifo.emplace_back(m_path3Partial.begin() + static_cast<std::ptrdiff_t>(packetStart),
++                                           m_path3Partial.begin() + static_cast<std::ptrdiff_t>(pos));
++            packetStart = pos;
++        }
++    }
++    if (packetStart != 0u)
++        m_path3Partial.erase(m_path3Partial.begin(), m_path3Partial.begin() + static_cast<std::ptrdiff_t>(packetStart));
++}
++
++void PS2Memory::emitPath3Now(const uint8_t *data, uint32_t sizeBytes)
++{
++    if (!data || sizeBytes < 16u)
++        return;
++    const int savedPath = g_gsTracePath;
++    g_gsTracePath = static_cast<int>(GifPathId::Path3);
++    // The same route as submitGifPacket, so PATH3 stays in order with PATH1/PATH2 packets on the VU/GIF workers.
++    if (m_gifArbiter && m_gifArbiter->empty() && ps2x::asyncvif::submitGif(data, sizeBytes))
++    {
++        g_gsTracePath = savedPath;
++        return;
++    }
++    if (m_gifArbiter)
++    {
++        m_gifArbiter->submit(GifPathId::Path3, data, sizeBytes, false);
++        m_gifArbiter->drain();
++    }
++    else if (m_gifPacketCallback)
++        m_gifPacketCallback(data, sizeBytes);
++    g_gsTracePath = savedPath;
++}
++
++void PS2Memory::releaseOneMaskedPath3Packet()
++{
++    if (m_path3Masked)
++        return;
++    if (!m_path3MaskedFifo.empty())
++    {
++        std::vector<uint8_t> packet = std::move(m_path3MaskedFifo.front());
++        m_path3MaskedFifo.erase(m_path3MaskedFifo.begin());
++        emitPath3Now(packet.data(), static_cast<uint32_t>(packet.size()));
++    }
++    m_path3WindowOpen = !m_path3MaskedFifo.empty() || !m_path3Partial.empty();
++}
++
+ void PS2Memory::flushMaskedPath3Packets(bool drainImmediately)
+ {
++    if (path3PacketMode())
++    {
++        m_path3WindowOpen = false;
++        if (m_path3Masked)
++            return;
++        if (!m_path3Partial.empty())
++        {
++            m_path3MaskedFifo.push_back(std::move(m_path3Partial));
++            m_path3Partial.clear();
++        }
++        if (m_path3MaskedFifo.empty())
++            return;
++        std::vector<std::vector<uint8_t>> packets;
++        packets.swap(m_path3MaskedFifo);
++        for (const auto &packet : packets)
++            emitPath3Now(packet.data(), static_cast<uint32_t>(packet.size()));
++        (void)drainImmediately;
++        return;
++    }
+     if (m_path3Masked || m_path3MaskedFifo.empty())
+         return;
+ 
+@@ -3098,6 +3203,27 @@ void PS2Memory::flushMaskedPath3Packets(bool drainImmediately)
+ extern thread_local int g_gsTracePath; // gs_frontend.cpp, for PS2X_GS_TRACE
+ extern uint32_t g_gsTraceSrc;
+ 
++// JA-Port: PS2X_GIF_PATH_LOG=<seconds>:<count>: after <seconds> of run time, log <count> GIF submissions and VIF1
++// path-3 sync commands (see submitGifPacket and the VIF1 interpreter). True while lines remain; consumes one.
++bool gifPathLogLine()
++{
++    static const auto start = std::chrono::steady_clock::now();
++    static double after = -1.0;
++    static std::atomic<int64_t> left{[]
++    {
++        const char *value = std::getenv("PS2X_GIF_PATH_LOG");
++        unsigned count = 0u;
++        if (value && std::sscanf(value, "%lf:%u", &after, &count) == 2)
++            return static_cast<int64_t>(count);
++        return int64_t{0};
++    }()};
++    if (left.load(std::memory_order_relaxed) <= 0)
++        return false;
++    if (std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() < after)
++        return false;
++    return left.fetch_sub(1, std::memory_order_relaxed) > 0;
++}
++
+ void PS2Memory::submitGifPacket(GifPathId pathId, const uint8_t *data, uint32_t sizeBytes, bool drainImmediately, bool path2DirectHl)
+ {
+     if (!data || sizeBytes < 16)
+@@ -3135,12 +3261,26 @@ void PS2Memory::submitGifPacket(GifPathId pathId, const uint8_t *data, uint32_t
+         }
+         std::fprintf(stderr, "%s\n", line.c_str());
+     }
++    // JA-Port: PS2X_GIF_PATH_LOG: each submitted GIF packet (path, source, size, first tag's NLOOP/FLG/NREG, mask).
++    {
++        if (gifPathLogLine())
++        {
++            uint64_t tag = 0u;
++            std::memcpy(&tag, data, 8);
++            std::fprintf(stderr, "[gif-path] P%d src=%08x bytes=%u nloop=%u flg=%u nreg=%u masked=%d\n", static_cast<int>(pathId),
++                         g_gsTraceSrc, sizeBytes, static_cast<unsigned>(tag & 0x7FFFu), static_cast<unsigned>((tag >> 58) & 3u),
++                         static_cast<unsigned>((tag >> 60) & 0xFu), m_path3Masked ? 1 : 0);
++        }
++    }
+ 
+     if (pathId == GifPathId::Path3)
+     {
+         if (m_path3Masked)
+         {
+-            m_path3MaskedFifo.emplace_back(data, data + sizeBytes);
++            if (path3PacketMode())
++                queueMaskedPath3(data, sizeBytes);
++            else
++                m_path3MaskedFifo.emplace_back(data, data + sizeBytes);
+             return;
+         }
+         flushMaskedPath3Packets(false);
+diff --git a/runtime/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/runtime/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+index 8baa20f..160af04 100644
+--- a/runtime/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
++++ b/runtime/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+@@ -5,6 +5,9 @@
+ #include <vector>
+ #include <cstdlib>
+ #include <smmintrin.h>
++#include <cstdio>
++
++bool gifPathLogLine(); // ps2_memory.cpp, PS2X_GIF_PATH_LOG
+ 
+ enum VIFCmd : uint8_t
+ {
+@@ -488,6 +491,11 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+         uint8_t num = (cmd >> 16) & 0xFF;
+         const bool irq = (cmd & 0x80000000u) != 0u;
+ 
++        // JA-Port: PATH3 was unmasked and the stream goes on without masking it again: the queued PATH3 packets
++        // flow now, as the GIF would let them through while PATH3 stays unmasked.
++        if (m_path3WindowOpen && opcode != VIF_MSKPATH3 && opcode != VIF_NOP)
++            flushMaskedPath3Packets();
++
+         // Track most-recent command for VIFn_CODE emulation.
+         vif1_regs.code = cmd;
+         vif1_regs.num = num;
+@@ -534,8 +542,17 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+             // VIF command docs: MSKPATH3 uses IMMEDIATE bit 15.
+             const bool wasMasked = m_path3Masked;
+             m_path3Masked = (imm & 0x8000u) != 0u;
++            if (gifPathLogLine())
++                std::fprintf(stderr, "[gif-path] VIF1 MSKPATH3 %d (fifo %zu)\n", m_path3Masked ? 1 : 0, m_path3MaskedFifo.size());
+             if (wasMasked && !m_path3Masked)
+-                flushMaskedPath3Packets();
++            {
++                if (path3PacketMode())
++                    releaseOneMaskedPath3Packet(); // JA-Port: one GIF packet per unmask window
++                else
++                    flushMaskedPath3Packets();
++            }
++            else if (m_path3Masked)
++                m_path3WindowOpen = false;
+             continue;
+         }
+         else if (opcode == VIF_MARK)
+@@ -546,6 +563,8 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+         }
+         else if (opcode == VIF_FLUSHE || opcode == VIF_FLUSH || opcode == VIF_FLUSHA)
+         {
++            if (opcode != VIF_FLUSHE && gifPathLogLine())
++                std::fprintf(stderr, "[gif-path] VIF1 %s\n", opcode == VIF_FLUSHA ? "FLUSHA" : "FLUSH");
+             continue;
+         }
+         else if (opcode == VIF_MSCAL || opcode == VIF_MSCALF)
